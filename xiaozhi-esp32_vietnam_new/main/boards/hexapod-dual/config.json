@@ -1,0 +1,61 @@
+{
+  "board_name": "Hexapod Dual Board",
+  "board_id": "hexapod_dual",
+  "description": "Combined Hexapod board with VoiceBot + Bot controller - Full hexapod robot with audio, TFT display, camera, and 18 servo control",
+  "mcu": "ESP32-S3 N16R8",
+  "flash_size_mb": 16,
+  "psram_size_mb": 8,
+  "features": [
+    "wifi",
+    "ble",
+    "audio_io",
+    "tft_display",
+    "emotion_display",
+    "camera",
+    "hexapod_control",
+    "mcp_protocol",
+    "servo_control",
+    "websocket_dual"
+  ],
+  "display": {
+    "type": "ST7789",
+    "resolution": "240x240",
+    "interface": "SPI",
+    "purpose": "Main UI and voice interaction"
+  },
+  "emotion_display": {
+    "type": "ST7735",
+    "resolution": "80x160",
+    "interface": "SPI",
+    "purpose": "Emotion and status display"
+  },
+  "audio": {
+    "microphone": "INMP441",
+    "amplifier": "MAX98357A",
+    "interface": "I2S"
+  },
+  "camera": {
+    "sensor": "OV5640",
+    "resolution": "5MP",
+    "interface": "DVP",
+    "purpose": "Environment capture and vision"
+  },
+  "servo_system": {
+    "total_servos": 18,
+    "legs": 6,
+    "dof_per_leg": 3,
+    "controller": "PCA9685",
+    "pca9685_count": 2
+  },
+  "communication": [
+    "wifi",
+    "websocket",
+    "websocket_server",
+    "ble",
+    "uart_bridge"
+  ],
+  "boards_combined": {
+    "voicebot": "TFT display, audio I/O, voice control",
+    "bot": "Servo control, motion, emotion display"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "board_name": "Hexapod VoiceBot",
+  "board_id": "hexapod_voicebot",
+  "description": "VoiceBot with TFT display - Primary controller for Hexapod robot (NO CAMERA - Camera is on Hexapod Bot board connected via UART)",
+  "mcu": "ESP32-S3 N16R8",
+  "flash_size_mb": 16,
+  "psram_size_mb": 8,
+  "features": [
+    "wifi",
+    "ble",
+    "audio_io",
+    "tft_display",
+    "hexapod_control",
+    "mcp_protocol",
+    "uart_bridge"
+  ],
+  "display": {
+    "type": "ST7789",
+    "resolution": "240x240",
+    "interface": "SPI"
+  },
+  "audio": {
+    "microphone": "INMP441",
+    "amplifier": "MAX98357A",
+    "interface": "I2S"
+  },
+  "camera": {
+    "available": false,
+    "note": "Camera is on Hexapod Bot board (COM10), accessed via UART bridge"
+  },
+  "uart_bridge": {
+    "enabled": true,
+    "purpose": "Communicate with Hexapod Bot board for servo control and camera access",
+    "baud_rate": 921600,
+    "tx_gpio": 43,
+    "rx_gpio": 44
+  },
+  "communication": [
+    "wifi",
+    "websocket",
+    "ble",
+    "uart_to_hexapod_bot"
+  ]
+}

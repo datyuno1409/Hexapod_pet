@@ -1,0 +1,50 @@
+﻿{
+  "board_name": "Hexapod Bot Controller",
+  "board_id": "hexapod_bot",
+  "description": "Hexapod robot controller with 18 servos via 2x PCA9685",
+  "mcu": "ESP32-S3 N16R8",
+  "flash_size_mb": 16,
+  "psram_size_mb": 8,
+  "features": [
+    "wifi",
+    "ble",
+    "i2c",
+    "camera",
+    "servo_control",
+    "websocket_server",
+    "motion_control",
+    "lcd_display"
+  ],
+  "servo_system": {
+    "total_servos": 18,
+    "legs": 6,
+    "dof_per_leg": 3,
+    "controller": "PCA9685",
+    "pca9685_count": 2
+  },
+  "camera": {
+    "sensor": "OV5640",
+    "resolution": "5MP",
+    "interface": "DVP",
+    "purpose": "Environment capture for transmission to VoiceBot"
+  },
+  "display": {
+    "type": "ST7735",
+    "resolution": "80x160",
+    "interface": "SPI",
+    "purpose": "Status display (landscape 160x80)"
+  },
+  "communication": [
+    "wifi",
+    "websocket_server",
+    "ble",
+    "uart_bridge"
+  ],
+  "uart_bridge": {
+    "enabled": true,
+    "purpose": "Receive commands from VoiceBot board and send telemetry back",
+    "baud_rate": 921600,
+    "tx_gpio": 43,
+    "rx_gpio": 44
+  }
+}
