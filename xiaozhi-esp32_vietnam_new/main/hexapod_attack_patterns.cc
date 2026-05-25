@@ -157,15 +157,8 @@ void AttackPatterns::UpdateFrame() {
             break;
     }
 
-    // Send computed angles to servo controller
-    // WHY use a map?
-    //   ServoController::SetServoAngles() takes a map<id, angle>
-    //   Allows partial updates (only changed servos)
-    std::map<uint8_t, float> angle_map;
-    for (uint8_t i = 0; i < 18; i++) {
-        angle_map[i] = angles[i];
-    }
-    servo_controller_->SetServoAngles(angle_map);
+    // Send computed angles to servo controller (direct array)
+    servo_controller_->SetServoAngles(angles);
 }
 
 // ============ INTERNAL HELPERS ============
@@ -174,11 +167,7 @@ void AttackPatterns::CompleteAttack() {
     is_attacking_ = false;
 
     // Return all servos to neutral position
-    std::map<uint8_t, float> neutral;
-    for (uint8_t i = 0; i < 18; i++) {
-        neutral[i] = 90.0f;
-    }
-    servo_controller_->SetServoAngles(neutral);
+    servo_controller_->SetNeutral();
 
     // Resume walking if it was active before attack
     // WHY check was_walking_before_?

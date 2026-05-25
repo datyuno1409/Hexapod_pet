@@ -1,5 +1,9 @@
-﻿#include "hexapod_protocol.h"
+#include "hexapod_protocol.h"
 #include "hexapod_uart_bridge.h"
+#include "hexapod_constants.h"
+#include "hexapod_servo_controller.h"
+#include "hexapod_command_dispatcher.h"
+#include "hexapod_motion.h"
 #include <esp_log.h>
 #include <esp_http_client.h>
 #include <cJSON.h>
@@ -36,6 +40,36 @@ void HexapodProtocol::Disconnect() {
 bool HexapodProtocol::IsConnected() const { return connected_; }
 
 bool HexapodProtocol::SendCommand(const std::string& command) {
+    if (ServoController::GetInstance().IsInitialized()) {
+        ESP_LOGI(TAG, "Executing command locally on VoiceBot (diagnostic mode)...");
+        cJSON* root = cJSON_Parse(command.c_str());
+        if (root) {
+            CommandDispatcher::Dispatch(root,
+                [](const ParsedCommand& p) {
+                    HexapodMotion& motion = HexapodMotion::GetInstance();
+                    const std::string& action = p.motion_action;
+                    if      (action == "forward")  motion.MoveForward(p.speed, p.duration_ms);
+                    else if (action == "backward") motion.MoveBackward(p.speed, p.duration_ms);
+                    else if (action == "left")     motion.TurnLeft(p.speed, p.duration_ms);
+                    else if (action == "right")    motion.TurnRight(p.speed, p.duration_ms);
+                    else if (action == "jump")     motion.Jump(p.speed);
+                    else if (action == "sit")      motion.Sit();
+                    else if (action == "dance")    motion.Dance(p.speed, p.duration_ms);
+                    else if (action == "stand")    motion.Stand();
+                    else if (action == "stop")     motion.Stop();
+                    else ESP_LOGW(TAG, "Unknown local motion action: %s", action.c_str());
+                },
+                [](const ParsedCommand& p) {
+                    ESP_LOGI(TAG, "Local emotion: %s text=%s", p.emotion.c_str(), p.emotion_text.c_str());
+                },
+                nullptr,
+                nullptr
+            );
+            cJSON_Delete(root);
+        }
+        return true;
+    }
+
     if (HexapodUartBridge::GetInstance().IsStarted()) {
         return HexapodUartBridge::GetInstance().SendCommandJson(command);
     }
@@ -50,7 +84,7 @@ bool HexapodProtocol::SendCommand(const std::string& command) {
     esp_http_client_config_t config = {};
     config.url = url.c_str();
     config.method = HTTP_METHOD_POST;
-    config.timeout_ms = 2000;
+    config.timeout_ms = HexapodConst::COMMAND_TIMEOUT_MS;
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     esp_http_client_set_header(client, "Content-Type", "application/json");

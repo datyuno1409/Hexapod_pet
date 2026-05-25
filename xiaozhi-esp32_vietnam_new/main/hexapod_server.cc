@@ -1,8 +1,10 @@
 #include "hexapod_server.h"
 #include "hexapod_motion.h"
 #include "hexapod_emotion_display.h"
+#include "hexapod_command_dispatcher.h"
 #include "boards/common/board.h"
 #include "esp32_camera.h"
+#include "hexapod_constants.h"
 #include <esp_log.h>
 #include <esp_http_server.h>
 #include <cJSON.h>
@@ -187,7 +189,7 @@ static void camera_stream_task(void* arg) {
             }
         }
 #endif
-        vTaskDelay(pdMS_TO_TICKS(100)); // 10 FPS
+        vTaskDelay(pdMS_TO_TICKS(1000 / HexapodConst::CAMERA_STREAM_FPS)); // Configurable FPS
     }
 }
 
@@ -311,41 +313,24 @@ void HexapodServer::HandleMessage(const std::string& payload) {
 }
 
 void HexapodServer::DispatchCommand(const cJSON* root) {
-    cJSON* cmd = cJSON_GetObjectItem(root, "cmd");
-    if (!cmd || !cJSON_IsString(cmd)) {
-        ESP_LOGE(TAG, "Missing 'cmd' field");
-        return;
-    }
-
-    std::string command(cmd->valuestring);
-    ESP_LOGI(TAG, "Dispatching: %s", command.c_str());
-
-    if (command == "motion") {
-        HandleMotionCommand(root);
-    } else if (command == "camera") {
-        HandleCameraCommand(root);
-    } else if (command == "emotion") {
-        HandleEmotionCommand(root);
-    } else if (command == "ping") {
-        ESP_LOGI(TAG, "Ping received");
-    } else {
-        ESP_LOGW(TAG, "Unknown command: %s", command.c_str());
-    }
+    CommandDispatcher::Dispatch(root,
+        [this](const ParsedCommand& p) { HandleMotionCommand(p); },
+        [this](const ParsedCommand& p) { HandleEmotionCommand(p); },
+        [this](const ParsedCommand& p) { HandleCameraCommand(p); },
+        [this]() { ESP_LOGI(TAG, "Ping received"); },
+        [this](const std::string& unknown) { ESP_LOGW(TAG, "Unknown command: %s", unknown.c_str()); }
+    );
 }
 
-void HexapodServer::HandleMotionCommand(const cJSON* root) {
-    cJSON* action_item   = cJSON_GetObjectItem(root, "action");
-    cJSON* speed_item    = cJSON_GetObjectItem(root, "speed");
-    cJSON* duration_item = cJSON_GetObjectItem(root, "duration_ms");
+void HexapodServer::HandleMotionCommand(const ParsedCommand& cmd) {
+    std::string action = cmd.motion_action;
+    int speed       = cmd.speed;
+    int duration_ms = cmd.duration_ms;
 
-    if (!action_item || !cJSON_IsString(action_item)) {
+    if (action.empty()) {
         ESP_LOGE(TAG, "Motion: missing 'action'");
         return;
     }
-
-    std::string action(action_item->valuestring);
-    int speed       = (speed_item    && cJSON_IsNumber(speed_item))    ? speed_item->valueint    : 50;
-    int duration_ms = (duration_item && cJSON_IsNumber(duration_item)) ? duration_item->valueint : 1000;
 
     ESP_LOGI(TAG, "Motion: action=%s speed=%d duration=%dms", action.c_str(), speed, duration_ms);
 
@@ -361,30 +346,19 @@ void HexapodServer::HandleMotionCommand(const cJSON* root) {
     else ESP_LOGW(TAG, "Unknown action: %s", action.c_str());
 }
 
-void HexapodServer::HandleCameraCommand(const cJSON* root) {
-    cJSON* action_item = cJSON_GetObjectItem(root, "action");
-    if (!action_item || !cJSON_IsString(action_item)) {
+void HexapodServer::HandleCameraCommand(const ParsedCommand& cmd) {
+    std::string action = cmd.camera_action;
+    if (action.empty()) {
         ESP_LOGE(TAG, "Camera: missing 'action'");
         return;
     }
-    std::string action(action_item->valuestring);
     ESP_LOGI(TAG, "Camera: action=%s", action.c_str());
     // TODO: implement camera capture/stream
 }
 
-void HexapodServer::HandleEmotionCommand(const cJSON* root) {
-    cJSON* emotion_item = cJSON_GetObjectItem(root, "emotion");
-    if (!emotion_item || !cJSON_IsString(emotion_item)) {
-        ESP_LOGE(TAG, "Emotion: missing 'emotion'");
-        return;
-    }
-
-    std::string emotion(emotion_item->valuestring);
-    std::string text;
-    cJSON* text_item = cJSON_GetObjectItem(root, "text");
-    if (text_item && cJSON_IsString(text_item)) {
-        text = text_item->valuestring;
-    }
+void HexapodServer::HandleEmotionCommand(const ParsedCommand& cmd) {
+    std::string emotion = cmd.emotion;
+    std::string text = cmd.emotion_text;
 
     ESP_LOGI(TAG, "Emotion: %s text=%s", emotion.c_str(), text.c_str());
     HexapodEmotionDisplay::GetInstance().ShowEmotion(emotion, text);

@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <map>
 
+class ServoController; // Forward declaration
+
 /**
  * @brief Hexapod Motion Controller
  *
@@ -76,6 +78,12 @@ public:
      */
     void SetSpeed(uint8_t speed);
 
+    /**
+     * @brief Initialize dependency injection (call once at startup)
+     * @param servo_ctrl ServoController instance to use
+     */
+    static void Init(ServoController& servo_ctrl);
+
 private:
     HexapodMotion();
     ~HexapodMotion() = default;
@@ -83,6 +91,7 @@ private:
     HexapodMotion(const HexapodMotion&) = delete;
     HexapodMotion& operator=(const HexapodMotion&) = delete;
 
+    ServoController* servo_controller_ = nullptr;  // Injected dependency
     uint8_t current_speed_ = 50;
     bool is_moving_ = false;
 

@@ -1,5 +1,6 @@
 #include "hexapod_mcp_tools.h"
 #include "hexapod_protocol.h"
+#include "hexapod_constants.h"
 #include <esp_log.h>
 #include <cJSON.h>
 
@@ -46,7 +47,7 @@ static std::string SendJson(cJSON* root) {
 
 ReturnValue HexapodMcpTools::HandleMoveCommand(const PropertyList& args) {
     std::string action      = GetString(args, "action", "forward");
-    int         speed       = GetInt(args, "speed", 50);
+    int         speed       = GetInt(args, "speed", static_cast<int>(HexapodConst::DEFAULT_MOTION_SPEED));
     int         duration_ms = GetInt(args, "duration_ms", 1000);
 
     ESP_LOGI(TAG, "hexapod.move: action=%s speed=%d duration=%dms",
@@ -63,7 +64,7 @@ ReturnValue HexapodMcpTools::HandleMoveCommand(const PropertyList& args) {
 }
 
 ReturnValue HexapodMcpTools::HandleCameraCapture(const PropertyList& args) {
-    std::string resolution = GetString(args, "resolution", "640x480");
+    std::string resolution = GetString(args, "resolution", HexapodConst::CAMERA_DEFAULT_RESOLUTION);
 
     ESP_LOGI(TAG, "hexapod.camera.capture: resolution=%s", resolution.c_str());
 
@@ -121,14 +122,14 @@ void HexapodMcpTools::RegisterTools(McpServer& mcp_server) {
 
     PropertyList move_props;
     move_props.AddProperty(Property("action", kPropertyTypeString));
-    move_props.AddProperty(Property("speed", kPropertyTypeInteger, 50, 1, 100));
+    move_props.AddProperty(Property("speed", kPropertyTypeInteger, HexapodConst::DEFAULT_MOTION_SPEED, 1, 100));
     move_props.AddProperty(Property("duration_ms", kPropertyTypeInteger, 1000, 0, 10000));
     mcp_server.AddTool("hexapod.move",
                        "Move the hexapod robot. action: forward/backward/left/right/jump/sit/dance/stand",
                        move_props, HandleMoveCommand);
 
     PropertyList cap_props;
-    cap_props.AddProperty(Property("resolution", kPropertyTypeString, std::string("640x480")));
+    cap_props.AddProperty(Property("resolution", kPropertyTypeString, HexapodConst::CAMERA_DEFAULT_RESOLUTION));
     mcp_server.AddTool("hexapod.camera.capture", "Capture image from hexapod camera",
                        cap_props, HandleCameraCapture);
 

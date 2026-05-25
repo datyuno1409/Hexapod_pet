@@ -103,8 +103,8 @@
 #define SERVO_I2C_PORT          0
 
 // PCA9685 I2C addresses
-#define PCA9685_ADDR_1          0x40  // First PCA9685 (9 servos: 0-8)
-#define PCA9685_ADDR_2          0x41  // Second PCA9685 (9 servos: 9-17)
+// #define PCA9685_ADDR_1          0x40  // First PCA9685 (9 servos: 0-8)
+// #define PCA9685_ADDR_2          0x41  // Second PCA9685 (9 servos: 9-17)
 
 // PCA9685 frequency (50Hz for servo control)
 #define PCA9685_FREQ_HZ         50    // 50 Hz for servo control
@@ -116,8 +116,8 @@
 
 // Servo count and layout
 #define SERVO_COUNT             18
-#define SERVOS_PER_PCA9685      9
-#define PCA9685_COUNT           2
+// #define SERVOS_PER_PCA9685      9
+// #define PCA9685_COUNT           2
 
 // Servo indices per leg (3 DOF per leg)
 #define SERVO_FL_COXA           0     // Front Left Hip rotation

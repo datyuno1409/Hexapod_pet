@@ -2,6 +2,7 @@
 #include "gaits/tripod_gait.h"
 #include "gaits/ripple_gait.h"
 #include "gaits/wave_gait.h"
+#include "hexapod_constants.h"
 #include <cmath>
 #include <esp_log.h>
 
@@ -41,14 +42,8 @@ bool GaitGenerator::Initialize(ServoController* servo_ctrl) {
     ESP_LOGI(TAG, "GaitGenerator initialized with ServoController");
 
     // Move all legs to neutral (standing) position
-    std::map<uint8_t, float> neutral_angles;
-    for (int i = 0; i < 18; i++) {
-        // All legs: coxa=90°, femur=90°, tibia=90° (neutral)
-        neutral_angles[i] = 90.0f;
-    }
-    servo_controller_->SetServoAngles(neutral_angles);
+    servo_controller_->SetNeutral();
 
-    ESP_LOGI(TAG, "All servos set to neutral position");
     return true;
 }
 
@@ -64,7 +59,7 @@ void GaitGenerator::Shutdown() {
 
 void GaitGenerator::Walk(GaitType gait, uint8_t speed, Direction dir, uint32_t duration_ms) {
     // Clamp speed to 0-100
-    speed_percent_ = (speed > 100) ? 100 : speed;
+    speed_percent_ = (speed > HexapodConst::MAX_SPEED) ? HexapodConst::MAX_SPEED : speed;
 
     // Set gait parameters
     current_gait_ = gait;
@@ -77,16 +72,16 @@ void GaitGenerator::Walk(GaitType gait, uint8_t speed, Direction dir, uint32_t d
     //   WAVE: 1500ms (slowest, most stable)
     switch (gait) {
         case TRIPOD:
-            gait_cycle_time_ms_ = 600;
+            gait_cycle_time_ms_ = HexapodConst::TRIPOD_CYCLE_TIME_MS;
             break;
         case RIPPLE:
-            gait_cycle_time_ms_ = 1000;
+            gait_cycle_time_ms_ = HexapodConst::RIPPLE_CYCLE_TIME_MS;
             break;
         case WAVE:
-            gait_cycle_time_ms_ = 1500;
+            gait_cycle_time_ms_ = HexapodConst::WAVE_CYCLE_TIME_MS;
             break;
         default:
-            gait_cycle_time_ms_ = 600;
+            gait_cycle_time_ms_ = HexapodConst::TRIPOD_CYCLE_TIME_MS;
     }
 
     // Start motion
@@ -108,11 +103,7 @@ void GaitGenerator::Stop() {
     is_paused_ = false;
 
     // Return to neutral position
-    std::map<uint8_t, float> neutral_angles;
-    for (int i = 0; i < 18; i++) {
-        neutral_angles[i] = 90.0f;
-    }
-    servo_controller_->SetServoAngles(neutral_angles);
+    servo_controller_->SetNeutral();
 
     ESP_LOGI(TAG, "Motion stopped, returned to neutral");
 }
@@ -152,6 +143,8 @@ void GaitGenerator::Update() {
         return;
     }
 
+    uint64_t start_us = esp_timer_get_time();
+
     uint32_t elapsed = GetElapsedTime();
 
     // Check if motion duration has expired
@@ -165,7 +158,21 @@ void GaitGenerator::Update() {
     ComputeServoAngles();
 
     // Send commands to servo controller
-    servo_controller_->SetServoAngles(target_angles_);
+    servo_controller_->SetServoAngles(target_angles_.data());
+
+    // Performance tracking
+    uint64_t end_us = esp_timer_get_time();
+    last_compute_us_ = end_us - start_us;
+    if (last_compute_us_ > max_compute_us_) {
+        max_compute_us_ = last_compute_us_;
+    }
+    compute_count_++;
+
+    // Log periodic stats (every 100 updates)
+    if (compute_count_ % 100 == 0) {
+        ESP_LOGI(TAG, "Perf: gait_update=%.1fms (max=%.1fms) count=%u",
+                 last_compute_us_ / 1000.0, max_compute_us_ / 1000.0, compute_count_);
+    }
 }
 
 // ============ INTERNAL COMPUTATION ============
@@ -176,8 +183,6 @@ void GaitGenerator::UpdateGaitPhase() {
 }
 
 void GaitGenerator::ComputeServoAngles() {
-    target_angles_.clear();
-
     uint32_t elapsed = GetElapsedTime();
     uint32_t phase_time_ms = elapsed % gait_cycle_time_ms_;
     float phase_0_to_1 = (float)phase_time_ms / (float)gait_cycle_time_ms_;
@@ -221,7 +226,9 @@ void GaitGenerator::ComputeServoAngles() {
 
         if (!reachable) {
             // If target unreachable, use neutral angles
-            coxa = femur = tibia = 90.0f;
+            coxa = HexapodConst::NEUTRAL_ANGLE_COXA;
+            femur = HexapodConst::NEUTRAL_ANGLE_FEMUR;
+            tibia = HexapodConst::NEUTRAL_ANGLE_TIBIA;
         }
 
         int servo_base = leg * 3;
@@ -265,23 +272,23 @@ LegPose GaitGenerator::ComputeLegIK(int leg_id, float phase_0_to_1) {
         float swing_local_phase = (leg_phase - 0.5f) * 2.0f;  // Normalize 0.5-1.0 to 0-1
 
         // Forward/backward swing
-        float swing_forward = 30.0f * std::sin(swing_local_phase * M_PI);
+        float swing_forward = HexapodConst::SWING_AMPLITUDE_DEG * std::sin(swing_local_phase * M_PI);
         // Height swing
-        float swing_height = 30.0f * std::sin(swing_local_phase * M_PI);
+        float swing_height = HexapodConst::SWING_AMPLITUDE_DEG * std::sin(swing_local_phase * M_PI);
 
-        pose.coxa = 90.0f;                      // No hip rotation in swing
-        pose.femur = 90.0f + swing_forward;    // Forward swing
-        pose.tibia = 90.0f - swing_height;     // Knee lifts during swing
+        pose.coxa = HexapodConst::NEUTRAL_ANGLE_COXA;                      // No hip rotation in swing
+        pose.femur = HexapodConst::NEUTRAL_ANGLE_FEMUR + swing_forward;    // Forward swing
+        pose.tibia = HexapodConst::NEUTRAL_ANGLE_TIBIA - swing_height;     // Knee lifts during swing
     } else {
         // Stance phase: leg on ground, pushes body
         float stance_local_phase = leg_phase * 2.0f;  // Normalize 0-0.5 to 0-1
 
         // Push backward
-        float push_back = -15.0f * std::sin(stance_local_phase * M_PI);
+        float push_back = -HexapodConst::STANCE_AMPLITUDE_DEG * std::sin(stance_local_phase * M_PI);
 
-        pose.coxa = 90.0f;                      // No hip rotation in stance
-        pose.femur = 75.0f + push_back;        // Push backward slightly
-        pose.tibia = 105.0f;                   // Slightly bent for stability
+        pose.coxa = HexapodConst::NEUTRAL_ANGLE_COXA;                      // No hip rotation in stance
+        pose.femur = HexapodConst::NEUTRAL_ANGLE_FEMUR + push_back;        // Push backward slightly
+        pose.tibia = HexapodConst::NEUTRAL_ANGLE_TIBIA + HexapodConst::STANCE_AMPLITUDE_DEG;   // Slightly bent for stability
     }
 
     return pose;

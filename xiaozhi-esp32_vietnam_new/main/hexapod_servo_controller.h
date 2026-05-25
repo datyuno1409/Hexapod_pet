@@ -1,11 +1,13 @@
 #ifndef HEXAPOD_SERVO_CONTROLLER_H
 #define HEXAPOD_SERVO_CONTROLLER_H
 
+#include <array>
 #include <cstdint>
+#include "hexapod_constants.h"
 #include <vector>
 #include <map>
 #include <memory>
-#include <functional>
+#include<functional>
 #include <driver/i2c_master.h>
 
 /**
@@ -32,6 +34,7 @@ public:
      * @return true if initialization successful
      */
     bool Initialize(i2c_master_bus_handle_t i2c_bus_handle);
+    bool IsInitialized() const { return i2c_bus_handle_ != nullptr; }
 
     /**
      * @brief Set servo angle
@@ -43,10 +46,20 @@ public:
 
     /**
      * @brief Set multiple servos at once
-     * @param angles Map of servo_id -> angle
+     * @param angles Array of 18 angles (index = servo_id)
      * @return true if all successful
      */
-    bool SetServoAngles(const std::map<uint8_t, float>& angles);
+    bool SetServoAngles(const float angles[18]);
+
+    /**
+     * @brief Set all 18 servos at once using batched I2C writes
+     * Optimized version: sends all PWM values in 2 I2C transactions (one per PCA9685)
+     * instead of 72 separate I2C writes.
+     *
+     * @param angles Array of 18 angles (index = servo_id)
+     * @return true if all successful
+     */
+    bool SetServoAnglesBatched(const float angles[18]);
 
     /**
      * @brief Get current servo angle
@@ -86,20 +99,26 @@ private:
     // PCA9685 I2C device handles
     i2c_master_dev_handle_t pca9685_[2];  // Two PCA9685 @ 0x40, 0x41
 
-    // Current servo angles (cache)
-    std::vector<float> current_angles_;
+    // Current servo angles (cache) - fixed-size array for performance
+    std::array<float, HexapodConst::NUM_SERVOS> current_angles_;
 
     // Movement tracking
     struct ServoMovement {
-        float target_angle;
-        float current_angle;
-        uint8_t speed;
-        uint32_t start_time_ms;
+        bool active = false;
+        float target_angle = 0.0f;
+        float current_angle = 0.0f;
+        uint8_t speed = 0;
+        uint32_t start_time_ms = 0;
     };
-    std::map<uint8_t, ServoMovement> movements_;
+    std::array<ServoMovement, HexapodConst::NUM_SERVOS> movements_;
 
     // I2C handle
     i2c_master_bus_handle_t i2c_bus_handle_ = nullptr;
+
+    // Performance monitoring
+    uint64_t last_i2c_us_ = 0;
+    uint64_t max_i2c_us_ = 0;
+    uint32_t i2c_count_ = 0;
 
     /**
      * @brief Calculate PWM value for angle

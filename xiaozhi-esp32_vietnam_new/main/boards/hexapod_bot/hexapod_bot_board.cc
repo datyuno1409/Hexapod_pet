@@ -40,8 +40,9 @@ private:
   // I2C servo bus for PCA9685 controllers
   i2c_master_bus_handle_t servo_i2c_bus_ = nullptr;
 
-  // Motion layer update timer (20Hz = 50ms interval)
-  esp_timer_handle_t motion_timer_ = nullptr;
+  // Motion layer update task (20Hz = 50ms interval)
+  TaskHandle_t motion_task_handle_ = nullptr;
+
 
   // Camera
   Camera *camera_ = nullptr;
@@ -98,23 +99,32 @@ private:
       return;
     }
 
-    esp_timer_create_args_t timer_args = {
-        .callback =
-            [](void *) {
-              GaitGenerator::GetInstance().Update();
-              AttackPatterns::GetInstance().UpdateFrame();
-            },
-        .arg = nullptr,
-        .dispatch_method = ESP_TIMER_TASK,
-        .name = "motion_update",
-        .skip_unhandled_events = true,
-    };
-    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &motion_timer_));
-    ESP_ERROR_CHECK(
-        esp_timer_start_periodic(motion_timer_, 50 * 1000)); // 50ms = 20Hz
+    // Create dedicated real-time task for motion updates (20Hz)
+    // Priority 15 (high) on core 0 for deterministic timing
+    BaseType_t ok = xTaskCreatePinnedToCore(
+        [](void* arg) {
+          HexapodBotBoard* self = static_cast<HexapodBotBoard*>(arg);
+          TickType_t last_wake = xTaskGetTickCount();
+          const TickType_t interval = pdMS_TO_TICKS(50); // 20Hz
+
+          while (true) {
+            // Update gait and attack patterns
+            GaitGenerator::GetInstance().Update();
+            AttackPatterns::GetInstance().UpdateFrame();
+
+            // Sleep until next period (exactly 50ms)
+            vTaskDelayUntil(&last_wake, interval);
+          }
+        },
+        "motion_update", 4096, this, 15, &motion_task_handle_, 0);
+
+    if (ok != pdPASS) {
+      ESP_LOGE(TAG, "Failed to create motion update task!");
+      return;
+    }
 
     ESP_LOGI(TAG, "Motion layer ready: ServoController + GaitGenerator + "
-                  "AttackPatterns @ 20Hz");
+                  "AttackPatterns @ 20Hz (task priority 15, core 0)");
   }
 
   // ========================================================================
@@ -170,6 +180,30 @@ private:
 
     // STEP 5: Reset and initialize panel
     esp_lcd_panel_reset(panel);
+
+    // Send ST7735S manual initialization sequence before calling esp_lcd_panel_init
+    ESP_LOGI(TAG, "Sending manual ST7735S initialization sequence...");
+    
+    // 1. Software Reset (SWRESET)
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(panel_io, 0x01, nullptr, 0));
+    vTaskDelay(pdMS_TO_TICKS(150));
+
+    // 2. Sleep Out (SLPOUT)
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(panel_io, 0x11, nullptr, 0));
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    // 3. Frame Rate Control (FRMCTR1)
+    uint8_t frmctr1_data[] = {0x01, 0x2C, 0x2D};
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(panel_io, 0xB1, frmctr1_data, sizeof(frmctr1_data)));
+
+    // 4. Color Mode / Interface Pixel Format (COLMOD)
+    uint8_t colmod_data[] = {0x05}; // 16-bit color (RGB565)
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(panel_io, 0x3A, colmod_data, sizeof(colmod_data)));
+
+    // 5. Display On (DISPON)
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(panel_io, 0x29, nullptr, 0));
+    vTaskDelay(pdMS_TO_TICKS(100));
+
     esp_lcd_panel_init(panel);
     esp_lcd_panel_invert_color(panel, DISPLAY_INVERT_COLOR);
     esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);

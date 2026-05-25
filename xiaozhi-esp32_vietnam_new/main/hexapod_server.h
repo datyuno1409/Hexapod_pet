@@ -2,6 +2,7 @@
 #define HEXAPOD_SERVER_H
 
 #include <string>
+#include "hexapod_command_dispatcher.h"
 #include <functional>
 #include <cJSON.h>
 #include <memory>
@@ -55,19 +56,19 @@ private:
      * @brief Handle motion command
      * @param motion_cmd JSON command with action, speed, duration
      */
-    void HandleMotionCommand(const cJSON* motion_cmd);
+    void HandleMotionCommand(const ParsedCommand& cmd);
 
     /**
      * @brief Handle camera command (capture or stream)
      * @param camera_cmd JSON command with action (capture/stream_on/stream_off)
      */
-    void HandleCameraCommand(const cJSON* camera_cmd);
+    void HandleCameraCommand(const ParsedCommand& cmd);
 
     /**
      * @brief Handle emotion display command
      * @param emotion_cmd JSON command with emotion and optional text
      */
-    void HandleEmotionCommand(const cJSON* emotion_cmd);
+    void HandleEmotionCommand(const ParsedCommand& cmd);
 
     /**
      * @brief Parse and dispatch JSON command
