@@ -1,3 +1,5 @@
+> **Fork note**: このリポジトリは六脚ロボット制御に特化しています。詳細は [README.md](README.md)（ベトナム語）または [README_en.md](README_en.md)（英語）をご覧ください。
+
 # MCP ベースのチャットボット
 
 （日本語 | [中文](README.md) | [English](README_en.md)）

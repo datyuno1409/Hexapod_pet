@@ -1,3 +1,5 @@
+> **Fork note**: This repository is focused on hexapod robot control. See [README.md](README.md) (Vietnamese) or [README_en.md](README_en.md) (English).
+
 # An MCP-based Chatbot
 
 （[Tiếng Việt](README.md) | 中文 | [English](README_en.md) | [日本語](README_ja.md)）
