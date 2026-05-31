@@ -25,11 +25,8 @@ private:
      */
     static ReturnValue HandleMoveCommand(const PropertyList& args);
 
-    /**
-     * @brief hexapod.camera.capture tool handler
-     * Captures image from hexapod camera
-     */
-    static ReturnValue HandleCameraCapture(const PropertyList& args);
+    /// @brief hexapod.camera.capture (disabled - AI vision not available)
+    // static ReturnValue HandleCameraCapture(const PropertyList& args);
 
     /**
      * @brief hexapod.camera.stream tool handler

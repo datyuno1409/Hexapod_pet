@@ -6,33 +6,38 @@
 
 // ============================================================================
 // CAMERA (OV5640 - for capturing images to send to VoiceBot)
+// Tích hợp sẵn trên board ESP32-S3 N16R8 CAM
 // ============================================================================
-#define CAMERA_I2C_SDA          ((gpio_num_t)39)
-#define CAMERA_I2C_SCL          ((gpio_num_t)40)
+#define CAMERA_I2C_SDA          ((gpio_num_t)4)
+#define CAMERA_I2C_SCL          ((gpio_num_t)5)
 #define CAMERA_I2C_FREQ_HZ      (400 * 1000)  // 400 kHz
 #define CAMERA_I2C_PORT         1
+#define CAMERA_STREAM_WIDTH     320
+#define CAMERA_STREAM_HEIGHT    240
 
-#define CAMERA_PWDN_PIN         ((gpio_num_t)47)   // Power down
-#define CAMERA_RESET_PIN        ((gpio_num_t)21)   // Reset
-#define CAMERA_VSYNC_PIN        ((gpio_num_t)34)   // VSYNC
-#define CAMERA_HREF_PIN         ((gpio_num_t)35)   // HREF
-#define CAMERA_PCLK_PIN         ((gpio_num_t)36)   // PCLK
+#define CAMERA_PWDN_PIN         GPIO_NUM_NC   // Power down
+#define CAMERA_RESET_PIN        GPIO_NUM_NC   // Reset
+#define CAMERA_VSYNC_PIN        ((gpio_num_t)6)   // VSYNC
+#define CAMERA_HREF_PIN         ((gpio_num_t)7)   // HREF
+#define CAMERA_PCLK_PIN         ((gpio_num_t)13)  // PCLK
+#define CAMERA_XCLK_PIN         ((gpio_num_t)15)  // XCLK
 
 // Camera D0-D7 data pins
-#define CAMERA_D0_PIN           ((gpio_num_t)37)
-#define CAMERA_D1_PIN           ((gpio_num_t)38)
-#define CAMERA_D2_PIN           ((gpio_num_t)19)
-#define CAMERA_D3_PIN           ((gpio_num_t)20)
-#define CAMERA_D4_PIN           ((gpio_num_t)22)
-#define CAMERA_D5_PIN           ((gpio_num_t)23)
-#define CAMERA_D6_PIN           ((gpio_num_t)24)
-#define CAMERA_D7_PIN           ((gpio_num_t)25)
+#define CAMERA_D0_PIN           ((gpio_num_t)11)
+#define CAMERA_D1_PIN           ((gpio_num_t)9)
+#define CAMERA_D2_PIN           ((gpio_num_t)8)
+#define CAMERA_D3_PIN           ((gpio_num_t)10)
+#define CAMERA_D4_PIN           ((gpio_num_t)12)
+#define CAMERA_D5_PIN           ((gpio_num_t)18)
+#define CAMERA_D6_PIN           ((gpio_num_t)17)
+#define CAMERA_D7_PIN           ((gpio_num_t)16)
 
 // ============================================================================
 // PCA9685 SERVO CONTROLLER (I2C)
+// Đã được dời chân vì 15, 16 bị Camera chiếm dụng!
 // ============================================================================
-#define SERVO_I2C_SDA           ((gpio_num_t)41)
-#define SERVO_I2C_SCL           ((gpio_num_t)42)
+#define SERVO_I2C_SDA           ((gpio_num_t)21)
+#define SERVO_I2C_SCL           ((gpio_num_t)47)
 #define SERVO_I2C_FREQ_HZ       (400 * 1000)  // 400 kHz
 #define SERVO_I2C_PORT          0
 
@@ -50,13 +55,14 @@
 
 // ============================================================================
 // DISPLAYS - Status & Information
+// Đã dời chân DC và RES vì 10, 11 bị Camera chiếm dụng!
 // ============================================================================
 
 // Secondary Display: TFT ST7735 0.96" 80x160 (SPI) - Physical Labels: GND, VCC, SCL, SDA, RES, DC, CS, BLK
 #define TFT_SMALL_SPI_SCL       ((gpio_num_t)1)    // Clock (SCL)
 #define TFT_SMALL_SPI_SDA       ((gpio_num_t)2)    // Serial Data (SDA / MOSI)
-#define TFT_SMALL_SPI_RES       ((gpio_num_t)11)   // Reset (RES)
-#define TFT_SMALL_SPI_DC        ((gpio_num_t)10)   // Data/Command (DC)
+#define TFT_SMALL_SPI_RES       ((gpio_num_t)40)   // Reset (RES) -> GPIO 40 (JTAG pin, cần reset)
+#define TFT_SMALL_SPI_DC        ((gpio_num_t)38)   // Data/Command (DC) -> GPIO 38 (free)
 #define TFT_SMALL_SPI_CS        ((gpio_num_t)3)    // Chip Select (CS)
 #define TFT_SMALL_SPI_BLK       ((gpio_num_t)14)   // Backlight (BLK)
 

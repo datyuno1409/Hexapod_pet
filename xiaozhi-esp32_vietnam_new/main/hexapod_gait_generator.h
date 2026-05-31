@@ -49,6 +49,8 @@ public:
         TRIPOD,     // Fast: 3 legs swing, 3 push
         RIPPLE,     // Balanced: 1 leg swings, 5 push (sequential)
         WAVE,       // Slow: Full sequential wave
+        BI_GAIT,    // Dynamic: Bi-pedal like gait (2 pushing, 4 swinging)
+        JUMP,       // Special: crouch and spring up
     };
 
     // Direction of motion
@@ -262,9 +264,11 @@ private:
      *   Different gaits have completely different phase patterns.
      *   Centralizing this logic makes it easy to add new gaits later.
      */
-    float GetTripodPhase(float norm_time);
-    float GetRipplePhase(float norm_time);
-    float GetWavePhase(float norm_time);
+    float GetTripodPhase(float norm_time, int leg_id);
+    float GetRipplePhase(float norm_time, int leg_id);
+    float GetWavePhase(float norm_time, int leg_id);
+    float GetBiGaitPhase(float norm_time, int leg_id);
+    float GetJumpPhase(float norm_time, int leg_id);
 
     /**
      * Smooth interpolation curve for natural-looking motion.
@@ -298,6 +302,7 @@ private:
     // Motion control flags
     bool is_walking_;
     bool is_paused_;
+	uint32_t pause_start_time_;
 
     // Cached target servo angles (updated each cycle)
     // Fixed-size array for performance: index = servo_id (0-17), value = angle in degrees

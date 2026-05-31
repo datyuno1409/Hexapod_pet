@@ -1,4 +1,4 @@
-#include "hexapod_command_dispatcher.h"
+﻿#include "hexapod_command_dispatcher.h"
 #include <esp_log.h>
 
 static const char* TAG = "CMD_DISPATCHER";
@@ -18,8 +18,12 @@ bool CommandDispatcher::Parse(const cJSON* root, ParsedCommand& out) {
         cJSON* duration = cJSON_GetObjectItem(root, "duration_ms");
 
         out.motion_action = cJSON_IsString(action) ? action->valuestring : "";
-        out.speed = cJSON_IsNumber(speed) ? speed->valueint : HexapodConst::DEFAULT_MOTION_SPEED;
-        out.duration_ms = cJSON_IsNumber(duration) ? duration->valueint : 0;
+        int parsed_speed = cJSON_IsNumber(speed) ? speed->valueint : HexapodConst::DEFAULT_MOTION_SPEED;
+        if (parsed_speed < 0) parsed_speed = 0;
+        if (parsed_speed > HexapodConst::MAX_SPEED) parsed_speed = HexapodConst::MAX_SPEED;
+        out.speed = parsed_speed;
+        int parsed_duration = cJSON_IsNumber(duration) ? duration->valueint : 0;
+        out.duration_ms = parsed_duration < 0 ? 0 : parsed_duration;
     } else if (out.cmd == "emotion") {
         cJSON* emotion = cJSON_GetObjectItem(root, "emotion");
         cJSON* text = cJSON_GetObjectItem(root, "text");
@@ -28,7 +32,9 @@ bool CommandDispatcher::Parse(const cJSON* root, ParsedCommand& out) {
         out.emotion_text = cJSON_IsString(text) ? text->valuestring : "";
     } else if (out.cmd == "camera") {
         cJSON* action = cJSON_GetObjectItem(root, "action");
+        cJSON* value = cJSON_GetObjectItem(root, "value");
         out.camera_action = cJSON_IsString(action) ? action->valuestring : "";
+        out.camera_value = cJSON_IsNumber(value) ? value->valueint : 0;
     }
 
     return true;

@@ -44,9 +44,9 @@ constexpr float FEMUR_LENGTH_MM = 50.0f;
 constexpr float TIBIA_LENGTH_MM = 70.0f;
 
 // Stride slightly smaller than tripod for stability
-constexpr float STRIDE_LENGTH_MM = 30.0f;
-constexpr float LIFT_HEIGHT_MM = 20.0f;
-constexpr float NEUTRAL_Z_OFFSET_MM = -80.0f;
+constexpr float STRIDE_LENGTH_MM = 60.0f;
+constexpr float LIFT_HEIGHT_MM = 30.0f;
+constexpr float NEUTRAL_Z_OFFSET_MM = -50.0f;
 
 /**
  * Determine if a specific leg is swinging at given phase.
@@ -161,7 +161,7 @@ inline float ComputeFootZ(uint8_t leg_id, float phase) {
  * Same as tripod - Y position is fixed based on leg mounting.
  */
 inline float ComputeFootY(uint8_t leg_id) {
-    constexpr float Y_OFFSET = 60.0f;  // mm from center
+    constexpr float Y_OFFSET = 80.0f;  // mm from center
     return (leg_id % 2 == 0) ? Y_OFFSET : -Y_OFFSET;
 }
 
@@ -170,7 +170,7 @@ inline float ComputeFootY(uint8_t leg_id) {
  */
 inline void ComputeFootPosition(uint8_t leg_id, float phase, float direction,
                                  float& x_out, float& y_out, float& z_out) {
-    constexpr float X_NEUTRAL = 80.0f;  // Neutral X from body center
+    constexpr float X_NEUTRAL = 0.0f;  // Neutral X from body center
 
     x_out = X_NEUTRAL + ComputeFootX(leg_id, phase, direction);
     y_out = ComputeFootY(leg_id);

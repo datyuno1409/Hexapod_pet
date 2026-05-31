@@ -13,6 +13,7 @@
 #include <freertos/task.h>
 
 #include "boards/common/esp32_camera.h"
+#include "hexapod_constants.h"
 #include <cJSON.h>
 #include <driver/i2c_master.h>
 #include <driver/spi_master.h>
@@ -22,6 +23,8 @@
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <esp_video_init.h>
+#include <esp_wifi.h>
+#include <esp_heap_caps.h>
 
 #define TAG "HexapodBotBoard"
 
@@ -173,7 +176,7 @@ private:
     esp_lcd_panel_handle_t panel = nullptr;
     esp_lcd_panel_dev_config_t panel_config = {};
     panel_config.reset_gpio_num = TFT_SMALL_SPI_RES;
-    panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB;
+    panel_config.rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR;
     panel_config.bits_per_pixel = 16;
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(panel_io, &panel_config, &panel));
     ESP_LOGI(TAG, "ST7789/ST7735 panel handle created");
@@ -208,17 +211,19 @@ private:
     esp_lcd_panel_invert_color(panel, DISPLAY_INVERT_COLOR);
     esp_lcd_panel_swap_xy(panel, DISPLAY_SWAP_XY);
     esp_lcd_panel_mirror(panel, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
-    ESP_LOGI(TAG, "Panel initialized (swap_xy=%d, mirror_x=%d, mirror_y=%d)",
-             DISPLAY_SWAP_XY, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
+    esp_lcd_panel_set_gap(panel, DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y);
+    ESP_LOGI(TAG, "Panel initialized (swap_xy=%d, mirror_x=%d, mirror_y=%d, gap=%d,%d)",
+             DISPLAY_SWAP_XY, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y,
+             DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y);
 
     // STEP 6: Create SpiLcdDisplay (LVGL handles all rendering)
-    // Landscape: width=160, height=80 (after swap_xy)
+    // Landscape logical resolution is 160x80 after swap_xy.
     display_ = new SpiLcdDisplay(panel_io, panel,
-                                  TFT_SMALL_WIDTH, TFT_SMALL_HEIGHT,
-                                  DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y,
+                                  TFT_SMALL_HEIGHT, TFT_SMALL_WIDTH,
+                                  0, 0,
                                   DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y,
                                   DISPLAY_SWAP_XY);
-    ESP_LOGI(TAG, "SpiLcdDisplay created (landscape 160x80)");
+    ESP_LOGI(TAG, "SpiLcdDisplay created (landscape 160x80, panel gap applied)");
   }
 
   // ========================================================================
@@ -243,7 +248,7 @@ private:
         .vsync_io = CAMERA_VSYNC_PIN,
         .de_io = CAMERA_HREF_PIN,
         .pclk_io = CAMERA_PCLK_PIN,
-        .xclk_io = GPIO_NUM_NC,
+        .xclk_io = CAMERA_XCLK_PIN,
     };
 
     esp_video_init_sccb_config_t sccb_config = {
@@ -262,14 +267,14 @@ private:
         .reset_pin = CAMERA_RESET_PIN,
         .pwdn_pin = CAMERA_PWDN_PIN,
         .dvp_pin = dvp_pin_config,
-        .xclk_freq = 24000000,
+        .xclk_freq = HexapodConst::CAMERA_XCLK_FREQ_HZ,  // Stable OV5640 XCLK for clean stream on COM10
     };
 
     esp_video_init_config_t video_config = {
         .dvp = &dvp_config,
     };
 
-    camera_ = new Esp32Camera(video_config);
+    camera_ = new Esp32Camera(video_config, HexapodConst::CAMERA_STREAM_DEFAULT_WIDTH, HexapodConst::CAMERA_STREAM_DEFAULT_HEIGHT);
     if (camera_) {
       ESP_LOGI(TAG, "Camera object created");
     } else {
@@ -283,8 +288,15 @@ public:
 
     InitializeServoI2c();
     InitializeMotionLayer();
+    // Release JTAG pin GPIO 40 for TFT RES use
+    gpio_reset_pin((gpio_num_t)40);
     InitializeDisplay();
-    InitializeCamera();
+    // Camera init with safety check to prevent boot loop on failure
+    try {
+      InitializeCamera();
+    } catch (...) {
+      ESP_LOGE(TAG, "Camera initialization threw exception - skipping");
+    }
 
     // UART bridge - Bot acts as SLAVE
 #ifdef HEXAPOD_UART_PORT
@@ -292,6 +304,12 @@ public:
     uart_bridge.Start(HexapodUartBridge::Role::kSlave);
     ESP_LOGI(TAG, "UART bridge initialized as SLAVE for VoiceBot communication");
 #endif
+
+    esp_err_t wifi_ps_ret = esp_wifi_set_ps(WIFI_PS_NONE);
+    ESP_LOGI(TAG, "WiFi power save disabled for camera stream: %s", esp_err_to_name(wifi_ps_ret));
+    esp_err_t wifi_bw_ret = esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20);
+    ESP_LOGI(TAG, "WiFi bandwidth forced HT20 for stream stability: %s", esp_err_to_name(wifi_bw_ret));
+    ESP_LOGI(TAG, "PSRAM free after camera init: %u bytes", (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 
     ESP_LOGI(TAG, "Hexapod Bot board initialized successfully");
 

@@ -189,6 +189,8 @@ private:
             ESP_LOGI(TAG, "BOOT button long press: Spawning diagnostic motion task...");
             xTaskCreate([](void* arg) {
                 ESP_LOGI(TAG, "Diagnostic Motion Task started");
+                HexapodProtocol::GetInstance().SendCommand("{\"cmd\":\"motion\",\"action\":\"sweep\"}");
+                vTaskDelay(pdMS_TO_TICKS(4000));
                 HexapodProtocol::GetInstance().SendCommand("{\"cmd\":\"motion\",\"action\":\"stand\"}");
                 vTaskDelay(pdMS_TO_TICKS(2000));
                 HexapodProtocol::GetInstance().SendCommand("{\"cmd\":\"motion\",\"action\":\"dance\",\"speed\":60,\"duration_ms\":3000}");
@@ -242,8 +244,10 @@ public:
         InitializeTftDisplay();
         InitializeButtons();
         GetBacklight()->RestoreBrightness();
-        InitializeServoI2c();
-        InitializeMotionLayer();
+        
+        // Disable diagnostic mode (Voicebot will act as Master again)
+        // InitializeServoI2c();
+        // InitializeMotionLayer();
 
         // Initialize UART bridge for communication with Hexapod Bot board
         // VoiceBot acts as MASTER, sending commands to Bot (SLAVE)
@@ -258,7 +262,7 @@ public:
 #endif
 
         // Set default safe volume to prevent MAX98357A distortion
-        GetAudioCodec()->SetOutputVolume(60);
+        GetAudioCodec()->SetOutputVolume(40);
 
         ESP_LOGI(TAG, "Hexapod VoiceBot board initialized");
     }

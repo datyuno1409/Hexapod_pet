@@ -48,7 +48,7 @@ static std::string SendJson(cJSON* root) {
 ReturnValue HexapodMcpTools::HandleMoveCommand(const PropertyList& args) {
     std::string action      = GetString(args, "action", "forward");
     int         speed       = GetInt(args, "speed", static_cast<int>(HexapodConst::DEFAULT_MOTION_SPEED));
-    int         duration_ms = GetInt(args, "duration_ms", 1000);
+    int         duration_ms = GetInt(args, "duration_ms", 5000);
 
     ESP_LOGI(TAG, "hexapod.move: action=%s speed=%d duration=%dms",
              action.c_str(), speed, duration_ms);
@@ -63,19 +63,10 @@ ReturnValue HexapodMcpTools::HandleMoveCommand(const PropertyList& args) {
     return std::string("{\"status\":\"ok\",\"action\":\"" + action + "\"}");
 }
 
-ReturnValue HexapodMcpTools::HandleCameraCapture(const PropertyList& args) {
-    std::string resolution = GetString(args, "resolution", HexapodConst::CAMERA_DEFAULT_RESOLUTION);
-
-    ESP_LOGI(TAG, "hexapod.camera.capture: resolution=%s", resolution.c_str());
-
-    cJSON* cmd = cJSON_CreateObject();
-    cJSON_AddStringToObject(cmd, "cmd", "camera");
-    cJSON_AddStringToObject(cmd, "action", "capture");
-    cJSON_AddStringToObject(cmd, "resolution", resolution.c_str());
-    SendJson(cmd);
-
-    return std::string("{\"status\":\"ok\",\"action\":\"capture\"}");
-}
+// ReturnValue HexapodMcpTools::HandleCameraCapture(const PropertyList& args) {
+//     // Disabled: AI vision not available
+//     return std::string(R"({"status":"error","message":"Camera capture disabled"})");
+// }
 
 ReturnValue HexapodMcpTools::HandleCameraStream(const PropertyList& args) {
     bool enable = GetBool(args, "enable", true);
@@ -87,7 +78,7 @@ ReturnValue HexapodMcpTools::HandleCameraStream(const PropertyList& args) {
     cJSON_AddStringToObject(cmd, "action", enable ? "stream_on" : "stream_off");
     SendJson(cmd);
 
-    return std::string(std::string("{\"status\":\"ok\",\"streaming\":") + (enable ? "true" : "false") + "}");
+    return std::string("{\"status\":\"ok\",\"streaming\":") + (enable ? "true" : "false") + "}";
 }
 
 ReturnValue HexapodMcpTools::HandleEmotion(const PropertyList& args) {
@@ -123,15 +114,16 @@ void HexapodMcpTools::RegisterTools(McpServer& mcp_server) {
     PropertyList move_props;
     move_props.AddProperty(Property("action", kPropertyTypeString));
     move_props.AddProperty(Property("speed", kPropertyTypeInteger, HexapodConst::DEFAULT_MOTION_SPEED, 1, 100));
-    move_props.AddProperty(Property("duration_ms", kPropertyTypeInteger, 1000, 0, 10000));
+    move_props.AddProperty(Property("duration_ms", kPropertyTypeInteger, 5000, 0, 10000));
     mcp_server.AddTool("hexapod.move",
                        "Move the hexapod robot. action: forward/backward/left/right/jump/sit/dance/stand",
                        move_props, HandleMoveCommand);
 
-    PropertyList cap_props;
-    cap_props.AddProperty(Property("resolution", kPropertyTypeString, HexapodConst::CAMERA_DEFAULT_RESOLUTION));
-    mcp_server.AddTool("hexapod.camera.capture", "Capture image from hexapod camera",
-                       cap_props, HandleCameraCapture);
+    // Disabled: AI vision not available (model does not support image input)
+    // PropertyList cap_props;
+    // cap_props.AddProperty(Property("resolution", kPropertyTypeString, HexapodConst::CAMERA_DEFAULT_RESOLUTION));
+    // mcp_server.AddTool("hexapod.camera.capture", "Capture image from hexapod camera",
+    //                    cap_props, HandleCameraCapture);
 
     PropertyList stream_props;
     stream_props.AddProperty(Property("enable", kPropertyTypeBoolean, true));
@@ -149,5 +141,5 @@ void HexapodMcpTools::RegisterTools(McpServer& mcp_server) {
     mcp_server.AddTool("hexapod.status", "Get hexapod robot status",
                        status_props, HandleStatus);
 
-    ESP_LOGI(TAG, "Hexapod MCP tools registered (%d tools)", 5);
+    ESP_LOGI(TAG, "Hexapod MCP tools registered (%d tools)", 4);
 }

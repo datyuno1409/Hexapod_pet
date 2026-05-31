@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #include <cmath>
@@ -20,14 +20,14 @@ namespace HexapodConst {
 // SERVO & PWM CONFIGURATION
 // ============================================================================
 
-/// PWM pulse width for 0° servo position (microseconds)
-constexpr uint16_t PWM_MIN_PULSE_US = 1000;
+/// PWM pulse width for 0Â° servo position (microseconds)
+constexpr uint16_t PWM_MIN_PULSE_US = 500;
 
-/// PWM pulse width for 90° servo position (microseconds)
+/// PWM pulse width for 90Â° servo position (microseconds)
 constexpr uint16_t PWM_MID_PULSE_US = 1500;
 
-/// PWM pulse width for 180° servo position (microseconds)
-constexpr uint16_t PWM_MAX_PULSE_US = 2000;
+/// PWM pulse width for 180Â° servo position (microseconds)
+constexpr uint16_t PWM_MAX_PULSE_US = 2500;
 
 /// Default servo neutral angle (degrees)
 constexpr float SERVO_NEUTRAL_ANGLE = 90.0f;
@@ -39,7 +39,7 @@ constexpr uint16_t PCA9685_FREQUENCY_HZ = 50;
 // SERVO LAYOUT
 // ============================================================================
 
-/// Total number of servos (6 legs × 3 DOF)
+/// Total number of servos (6 legs Ã— 3 DOF)
 constexpr uint8_t NUM_SERVOS = 18;
 
 /// Number of servos per PCA9685 board
@@ -69,15 +69,15 @@ constexpr float TIBIA_LENGTH_MM = 70.0f;
 // NEUTRAL/STANDING POSITION
 // ============================================================================
 
-/// Default standing posture: all joints at 90°
+/// Default standing posture: all joints at 90Â°
 constexpr float NEUTRAL_ANGLE_COXA = 90.0f;
 constexpr float NEUTRAL_ANGLE_FEMUR = 90.0f;
 constexpr float NEUTRAL_ANGLE_TIBIA = 90.0f;
 
 /// Neutral foot position offsets from body center (mm)
-constexpr float NEUTRAL_X_OFFSET_MM = 80.0f;   ///< Forward/back from center
+constexpr float NEUTRAL_X_OFFSET_MM = 0.0f;    ///< Forward/back from center (0 = straight out)
 constexpr float NEUTRAL_Y_OFFSET_MM = 60.0f;   ///< Left/right from center
-constexpr float NEUTRAL_Z_OFFSET_MM = -80.0f;  ///< Vertical (negative = down)
+constexpr float NEUTRAL_Z_OFFSET_MM = -50.0f;  ///< Vertical (negative = down)
 
 // ============================================================================
 // GAIT PARAMETERS - TRIPOD
@@ -86,10 +86,10 @@ constexpr float NEUTRAL_Z_OFFSET_MM = -80.0f;  ///< Vertical (negative = down)
 constexpr uint32_t TRIPOD_CYCLE_TIME_MS = 600;
 
 /// Maximum forward stride length per step (mm)
-constexpr float TRIPOD_STRIDE_LENGTH_MM = 40.0f;
+constexpr float TRIPOD_STRIDE_LENGTH_MM = 80.0f;
 
 /// Maximum foot lift height during swing (mm)
-constexpr float TRIPOD_LIFT_HEIGHT_MM = 20.0f;
+constexpr float TRIPOD_LIFT_HEIGHT_MM = 40.0f;
 
 // ============================================================================
 // GAIT PARAMETERS - RIPPLE
@@ -166,6 +166,9 @@ constexpr float DANCE_COXA_SWAY_MAX_DEG = 30.0f;
 /// Swing amplitude for simplified gait (degrees)
 constexpr float SWING_AMPLITUDE_DEG = 30.0f;
 
+/// Swing height amplitude for foot lift (degrees) - separate from forward swing
+constexpr float SWING_HEIGHT_AMPLITUDE_DEG = 20.0f;
+
 /// Stance push amplitude for simplified gait (degrees)
 constexpr float STANCE_AMPLITUDE_DEG = 15.0f;
 
@@ -230,13 +233,47 @@ constexpr uint32_t UART_BAUD_RATE = 921600;
 constexpr uint32_t GAIT_UPDATE_FREQ_HZ = 20;
 
 /// Gait update period (milliseconds)
-constexpr uint32_t GAIT_UPDATE_PERIOD_MS = 50;  ///< 1000ms / 20Hz
+constexpr uint32_t GAIT_UPDATE_PERIOD_MS = 50;
 
-/// Camera stream FPS
-constexpr uint8_t CAMERA_STREAM_FPS = 10;
+/// Camera stream task priorities
+constexpr uint8_t CAMERA_CAPTURE_TASK_PRIORITY = 6;
+constexpr uint8_t CAMERA_ENCODE_TASK_PRIORITY = 5;
+constexpr uint8_t CAMERA_SEND_TASK_PRIORITY = 4;
+
+/// Camera stream task stack size (increased to 8192 for high-res JPEG encoding)
+constexpr uint32_t CAMERA_STREAM_TASK_STACK_SIZE = 8192;
+
+/// Camera stream task core (core 1 to avoid motion interference)
+constexpr uint8_t CAMERA_STREAM_TASK_CORE = 1;
+
+/// Camera stream FPS (stable default for OV5640 on COM10)
+constexpr uint8_t CAMERA_STREAM_FPS = 12;
+
+/// Camera stream JPEG quality (1-100)
+constexpr uint8_t CAMERA_STREAM_QUALITY = 24;
+
+/// Camera stream JPEG quality minimum (for slider)
+constexpr uint8_t CAMERA_STREAM_QUALITY_MIN = 18;
+
+/// Camera stream JPEG quality maximum (for slider)
+constexpr uint8_t CAMERA_STREAM_QUALITY_MAX = 60;
+
+/// Default stream resolution for COM10 OV5640 (stable + smooth)
+constexpr uint16_t CAMERA_STREAM_DEFAULT_WIDTH = 320;
+constexpr uint16_t CAMERA_STREAM_DEFAULT_HEIGHT = 240;
+
+/// Higher preview modes allowed only when explicitly requested
+constexpr uint16_t CAMERA_STREAM_PREVIEW_WIDTH = 640;
+constexpr uint16_t CAMERA_STREAM_PREVIEW_HEIGHT = 480;
+
+/// Safe XCLK for OV5640 on COM10 (12 MHz for minimal noise/streaks)
+constexpr uint32_t CAMERA_XCLK_FREQ_HZ = 12000000;
 
 /// Default camera capture resolution
 constexpr const char* CAMERA_DEFAULT_RESOLUTION = "640x480";
+
+/// Camera capture JPEG quality for high-quality snapshots
+constexpr uint8_t CAMERA_CAPTURE_QUALITY = 90;
 
 // ============================================================================
 // DISPLAY
@@ -265,3 +302,4 @@ constexpr const char* EMOTION_CONFUSED = "confused";
 constexpr const char* EMOTION_ANGRY = "angry";
 
 }  // namespace HexapodConst
+

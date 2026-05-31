@@ -1,5 +1,4 @@
-#pragma once
-
+﻿#pragma once
 #include <cstdint>
 #include <string>
 #include <functional>
@@ -23,6 +22,7 @@ struct ParsedCommand {
 
     // Camera parameters
     std::string camera_action;
+    int camera_value = 0;  // Generic value field for camera commands (e.g., quality level)
 };
 
 /**
@@ -46,10 +46,5 @@ public:
     /**
      * @brief Unified entry point for dispatching commands
      */
-    static void Dispatch(const cJSON* root,
-                         MotionHandler motion_handler,
-                         EmotionHandler emotion_handler,
-                         CameraHandler camera_handler,
-                         PingHandler ping_handler,
-                         UnknownHandler unknown_handler = nullptr);
+    static void Dispatch(const cJSON* root, MotionHandler motion_handler, EmotionHandler emotion_handler, CameraHandler camera_handler, PingHandler ping_handler, UnknownHandler unknown_handler = nullptr);
 };

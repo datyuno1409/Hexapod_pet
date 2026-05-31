@@ -178,8 +178,9 @@ void HexapodUartBridge::ExecuteRobotCommand(const std::string& payload) {
             else if (action == "backward") motion.MoveBackward(p.speed, p.duration_ms);
             else if (action == "left")     motion.TurnLeft(p.speed, p.duration_ms);
             else if (action == "right")    motion.TurnRight(p.speed, p.duration_ms);
+            else if (action == "bigait")   motion.BiGaitWalk(p.speed, p.duration_ms);
             else if (action == "jump")     motion.Jump(p.speed);
-            else if (action == "sit")      motion.Sit();
+            else if (action == "sit" || action == "sit_down") motion.Sit();
             else if (action == "dance")    motion.Dance(p.speed, p.duration_ms);
             else if (action == "stand")    motion.Stand();
             else if (action == "stop")     motion.Stop();

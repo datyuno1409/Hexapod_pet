@@ -125,28 +125,11 @@ void McpServer::AddCommonTools() {
             });  
     }
 
-    auto camera = board.GetCamera();
-    if (camera) {
-        AddTool("self.camera.take_photo",
-            "Take a photo and explain it. Use this tool after the user asks you to see something.\n"
-            "Args:\n"
-            "  `question`: The question that you want to ask about the photo.\n"
-            "Return:\n"
-            "  A JSON object that provides the photo information.",
-            PropertyList({
-                Property("question", kPropertyTypeString)
-            }),
-            [camera](const PropertyList& properties) -> ReturnValue {
-                // Lower the priority to do the camera capture
-                TaskPriorityReset priority_reset(1);
-
-                if (!camera->Capture()) {
-                    throw std::runtime_error("Failed to capture photo");
-                }
-                auto question = properties["question"].value<std::string>();
-                return camera->Explain(question);
-            });
-    }
+    // Disabled: AI vision/explain not used
+    // auto camera = board.GetCamera();
+    // if (camera) {
+    //     AddTool("self.camera.take_photo", ...);
+    // }
 #endif
     
     // Restore the original tools list to the end of the tools list
@@ -362,22 +345,23 @@ void McpServer::ParseMessage(const std::string& message) {
 }
 
 void McpServer::ParseCapabilities(const cJSON* capabilities) {
-    auto vision = cJSON_GetObjectItem(capabilities, "vision");
-    if (cJSON_IsObject(vision)) {
-        auto url = cJSON_GetObjectItem(vision, "url");
-        auto token = cJSON_GetObjectItem(vision, "token");
-        if (cJSON_IsString(url)) {
-            auto camera = Board::GetInstance().GetCamera();
-            if (camera) {
-                std::string url_str = std::string(url->valuestring);
-                std::string token_str;
-                if (cJSON_IsString(token)) {
-                    token_str = std::string(token->valuestring);
-                }
-                camera->SetExplainUrl(url_str, token_str);
-            }
-        }
-    }
+    // Disabled: AI vision/explain not used
+    // auto vision = cJSON_GetObjectItem(capabilities, "vision");
+    // if (cJSON_IsObject(vision)) {
+    //     auto url = cJSON_GetObjectItem(vision, "url");
+    //     auto token = cJSON_GetObjectItem(vision, "token");
+    //     if (cJSON_IsString(url)) {
+    //         auto camera = Board::GetInstance().GetCamera();
+    //         if (camera) {
+    //             std::string url_str = std::string(url->valuestring);
+    //             std::string token_str;
+    //             if (cJSON_IsString(token)) {
+    //                 token_str = std::string(token->valuestring);
+    //             }
+    //             camera->SetExplainUrl(url_str, token_str);
+    //         }
+    //     }
+    // }
 }
 
 void McpServer::ParseMessage(const cJSON* json) {

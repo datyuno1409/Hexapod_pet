@@ -53,21 +53,16 @@ constexpr float FEMUR_LENGTH_MM = 50.0f;  // Upper leg
 constexpr float TIBIA_LENGTH_MM = 70.0f;  // Lower leg
 
 // Stride parameters (millimeters)
-// WHY 40mm stride?
+// WHY 80mm stride?
 //   - Large enough for visible motion
 //   - Small enough to avoid servo limits
-//   - Tested value for MG90S servos
-constexpr float STRIDE_LENGTH_MM = 40.0f;  // How far foot moves forward/back
-constexpr float LIFT_HEIGHT_MM = 20.0f;    // How high foot lifts during swing
+constexpr float STRIDE_LENGTH_MM = 120.0f;  // How far foot moves forward/back
+constexpr float LIFT_HEIGHT_MM = 40.0f;    // How high foot lifts during swing
 
 // Neutral foot position (relative to body center, millimeters)
-// WHY these positions?
-//   - Forms stable hexagon around body
-//   - Equal weight distribution
-//   - Avoids leg collisions
-constexpr float NEUTRAL_X_OFFSET_MM = 80.0f;  // Forward/back from center
-constexpr float NEUTRAL_Y_OFFSET_MM = 60.0f;  // Left/right from center
-constexpr float NEUTRAL_Z_OFFSET_MM = -80.0f; // Down from body (standing height)
+constexpr float NEUTRAL_X_OFFSET_MM = 0.0f;   // Forward/back from center
+constexpr float NEUTRAL_Y_OFFSET_MM = 80.0f;  // Left/right from center
+constexpr float NEUTRAL_Z_OFFSET_MM = -50.0f; // Down from body (standing height)
 
 // ============ HELPER FUNCTIONS ============
 
@@ -253,14 +248,16 @@ inline void ComputeFootPosition(uint8_t leg_id, float phase, float direction,
 inline bool InverseKinematics(float x, float y, float z,
                                float& coxa_angle, float& femur_angle, float& tibia_angle) {
     // Step 1: Coxa angle (hip rotation in XY plane)
-    // WHY atan2?
-    //   Handles all quadrants correctly
-    //   Returns angle in radians, convert to degrees
-    coxa_angle = std::atan2(y, x) * 180.0f / M_PI;
+    // WHY fabs?
+    //   Left legs (y>0): atan2(y,x) is positive.
+    //   Right legs (y<0): atan2(y,x) is negative.
+    //   By using fabs, we map both sides to 0-180 symmetrically,
+    //   assuming servos are mounted mirrored (0=back, 90=out, 180=forward for right side).
+    coxa_angle = std::fabs(std::atan2(y, x) * 180.0f / M_PI);
 
-    // Clamp coxa to servo limits (45° to 135°, centered at 90°)
-    if (coxa_angle < 45.0f) coxa_angle = 45.0f;
-    if (coxa_angle > 135.0f) coxa_angle = 135.0f;
+    // Clamp coxa to physical servo limits
+    if (coxa_angle < 0.0f) coxa_angle = 0.0f;
+    if (coxa_angle > 180.0f) coxa_angle = 180.0f;
 
     // Step 2: Project to 2D (distance from coxa joint, height)
     float horizontal_dist = std::sqrt(x * x + y * y) - COXA_LENGTH_MM;

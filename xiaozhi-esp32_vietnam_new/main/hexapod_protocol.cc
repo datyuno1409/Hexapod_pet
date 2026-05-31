@@ -40,6 +40,10 @@ void HexapodProtocol::Disconnect() {
 bool HexapodProtocol::IsConnected() const { return connected_; }
 
 bool HexapodProtocol::SendCommand(const std::string& command) {
+    if (HexapodUartBridge::GetInstance().IsStarted()) {
+        return HexapodUartBridge::GetInstance().SendCommandJson(command);
+    }
+
     if (ServoController::GetInstance().IsInitialized()) {
         ESP_LOGI(TAG, "Executing command locally on VoiceBot (diagnostic mode)...");
         cJSON* root = cJSON_Parse(command.c_str());
@@ -53,7 +57,7 @@ bool HexapodProtocol::SendCommand(const std::string& command) {
                     else if (action == "left")     motion.TurnLeft(p.speed, p.duration_ms);
                     else if (action == "right")    motion.TurnRight(p.speed, p.duration_ms);
                     else if (action == "jump")     motion.Jump(p.speed);
-                    else if (action == "sit")      motion.Sit();
+                    else if (action == "sit" || action == "sit_down")      motion.Sit();
                     else if (action == "dance")    motion.Dance(p.speed, p.duration_ms);
                     else if (action == "stand")    motion.Stand();
                     else if (action == "stop")     motion.Stop();
@@ -68,10 +72,6 @@ bool HexapodProtocol::SendCommand(const std::string& command) {
             cJSON_Delete(root);
         }
         return true;
-    }
-
-    if (HexapodUartBridge::GetInstance().IsStarted()) {
-        return HexapodUartBridge::GetInstance().SendCommandJson(command);
     }
 
     if (!connected_) {

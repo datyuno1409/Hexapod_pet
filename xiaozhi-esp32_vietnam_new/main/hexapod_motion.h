@@ -45,6 +45,13 @@ public:
     void TurnRight(uint8_t speed = 50, uint32_t duration_ms = 0);
 
     /**
+     * @brief Dynamic bipedal-like gait walk
+     * @param speed Speed 1-100
+     * @param duration_ms Duration in milliseconds (0 = continuous)
+     */
+    void BiGaitWalk(uint8_t speed = 50, uint32_t duration_ms = 0);
+
+    /**
      * @brief Jump
      * @param intensity Intensity 1-100
      */
@@ -56,6 +63,21 @@ public:
      * @param duration_ms Duration in milliseconds (0 = default)
      */
     void Dance(uint8_t intensity = 60, uint32_t duration_ms = 0);
+
+    /**
+     * @brief Strike attack motion
+     */
+    void Strike(uint8_t intensity = 80, uint32_t duration_ms = 1000);
+
+    /**
+     * @brief Lunge attack motion
+     */
+    void Lunge(uint8_t intensity = 80, uint32_t duration_ms = 1000);
+
+    /**
+     * @brief Diagnostic Sweep Test
+     */
+    void SweepTest();
 
     /**
      * @brief Stand up (neutral position)

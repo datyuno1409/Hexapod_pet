@@ -48,9 +48,9 @@ constexpr float FEMUR_LENGTH_MM = 50.0f;
 constexpr float TIBIA_LENGTH_MM = 70.0f;
 
 // Wave gait uses smaller strides for maximum stability
-constexpr float STRIDE_LENGTH_MM = 25.0f;
-constexpr float LIFT_HEIGHT_MM = 25.0f;  // Lifts slightly higher for clearance
-constexpr float NEUTRAL_Z_OFFSET_MM = -80.0f;
+constexpr float STRIDE_LENGTH_MM = 50.0f;
+constexpr float LIFT_HEIGHT_MM = 35.0f;  // Lifts slightly higher for clearance
+constexpr float NEUTRAL_Z_OFFSET_MM = -50.0f;
 
 // Wave order: back to front
 // WHY this order?
@@ -156,7 +156,7 @@ inline float ComputeFootZ(uint8_t leg_id, float phase) {
  * Compute Y foot position (same as other gaits).
  */
 inline float ComputeFootY(uint8_t leg_id) {
-    constexpr float Y_OFFSET = 60.0f;
+    constexpr float Y_OFFSET = 80.0f;
     return (leg_id % 2 == 0) ? Y_OFFSET : -Y_OFFSET;
 }
 
@@ -165,7 +165,7 @@ inline float ComputeFootY(uint8_t leg_id) {
  */
 inline void ComputeFootPosition(uint8_t leg_id, float phase, float direction,
                                  float& x_out, float& y_out, float& z_out) {
-    constexpr float X_NEUTRAL = 80.0f;
+    constexpr float X_NEUTRAL = 0.0f;
 
     x_out = X_NEUTRAL + ComputeFootX(leg_id, phase, direction);
     y_out = ComputeFootY(leg_id);

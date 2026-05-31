@@ -1,9 +1,13 @@
 #include "hexapod_motion.h"
 #include "hexapod_servo_controller.h"
+#include "hexapod_gait_generator.h"
 #include "hexapod_constants.h"
 #include <esp_log.h>
 #include <map>
 #include <cmath>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/timers.h>
 
 #define TAG "HexapodMotion"
 
@@ -22,54 +26,106 @@ void HexapodMotion::Init(ServoController& servo_ctrl) {
 
 HexapodMotion::HexapodMotion() {}
 
-void HexapodMotion::MoveForward(uint8_t speed, uint32_t /*duration_ms*/) {
-    ESP_LOGI(TAG, "MoveForward speed=%d", speed);
+void HexapodMotion::MoveForward(uint8_t speed, uint32_t duration_ms) {
+    ESP_LOGI(TAG, "==== MOTION CMD: MoveForward ====");
+    ESP_LOGI(TAG, "-> Speed=%d, Duration=%ums, Previous is_moving_=%d", speed, duration_ms, is_moving_);
     current_speed_ = speed;
     is_moving_ = true;
-    GenerateWalkingGait(speed, true);
+    GaitGenerator::GetInstance().Walk(GaitGenerator::BI_GAIT, speed, GaitGenerator::FORWARD, duration_ms);
 }
 
-void HexapodMotion::MoveBackward(uint8_t speed, uint32_t /*duration_ms*/) {
-    ESP_LOGI(TAG, "MoveBackward speed=%d", speed);
+void HexapodMotion::MoveBackward(uint8_t speed, uint32_t duration_ms) {
+    ESP_LOGI(TAG, "MoveBackward speed=%d duration=%ums", speed, duration_ms);
     current_speed_ = speed;
     is_moving_ = true;
-    GenerateWalkingGait(speed, false);
+    GaitGenerator::GetInstance().Walk(GaitGenerator::BI_GAIT, speed, GaitGenerator::BACKWARD, duration_ms);
 }
 
-void HexapodMotion::TurnLeft(uint8_t speed, uint32_t /*duration_ms*/) {
-    ESP_LOGI(TAG, "TurnLeft speed=%d", speed);
+void HexapodMotion::TurnLeft(uint8_t speed, uint32_t duration_ms) {
+    ESP_LOGI(TAG, "TurnLeft speed=%d duration=%ums", speed, duration_ms);
     current_speed_ = speed;
     is_moving_ = true;
-    GenerateTurningGait(speed, true);
+    GaitGenerator::GetInstance().Walk(GaitGenerator::BI_GAIT, speed, GaitGenerator::LEFT, duration_ms);
 }
 
-void HexapodMotion::TurnRight(uint8_t speed, uint32_t /*duration_ms*/) {
-    ESP_LOGI(TAG, "TurnRight speed=%d", speed);
+void HexapodMotion::TurnRight(uint8_t speed, uint32_t duration_ms) {
+    ESP_LOGI(TAG, "TurnRight speed=%d duration=%ums", speed, duration_ms);
     current_speed_ = speed;
     is_moving_ = true;
-    GenerateTurningGait(speed, false);
+    GaitGenerator::GetInstance().Walk(GaitGenerator::BI_GAIT, speed, GaitGenerator::RIGHT, duration_ms);
+}
+
+void HexapodMotion::BiGaitWalk(uint8_t speed, uint32_t duration_ms) {
+    ESP_LOGI(TAG, "BiGaitWalk speed=%d duration=%ums", speed, duration_ms);
+    current_speed_ = speed;
+    is_moving_ = true;
+    GaitGenerator::GetInstance().Walk(GaitGenerator::BI_GAIT, speed, GaitGenerator::FORWARD, duration_ms);
 }
 
 void HexapodMotion::Jump(uint8_t intensity) {
     ESP_LOGI(TAG, "Jump intensity=%d", intensity);
-    GenerateJumpMotion(intensity);
+    is_moving_ = true;
+    // Jump uses a special gait with fixed duration (e.g., 1000ms)
+    GaitGenerator::GetInstance().Walk(GaitGenerator::JUMP, intensity, GaitGenerator::FORWARD, 1000);
 }
 
-void HexapodMotion::Dance(uint8_t intensity, uint32_t /*duration_ms*/) {
-    ESP_LOGI(TAG, "Dance intensity=%d", intensity);
+void HexapodMotion::Dance(uint8_t intensity, uint32_t duration_ms) {
+    ESP_LOGI(TAG, "Dance intensity=%d duration=%ums", intensity, duration_ms);
     is_moving_ = true;
-    GenerateDanceMotion(intensity);
+    // Use a ripple turn as a visible dance loop instead of a single static sway pose.
+    GaitGenerator::GetInstance().Walk(GaitGenerator::RIPPLE, intensity, GaitGenerator::LEFT,
+                                      duration_ms ? duration_ms : 3000);
+}
+
+void HexapodMotion::Strike(uint8_t intensity, uint32_t duration_ms) {
+    ESP_LOGI(TAG, "Strike intensity=%d duration=%ums", intensity, duration_ms);
+    is_moving_ = true;
+    // Implementation: quick forward surge using Tripod gait for short duration
+    GaitGenerator::GetInstance().Walk(GaitGenerator::TRIPOD, intensity, GaitGenerator::FORWARD, duration_ms);
+}
+
+static void lunge_timer_callback(TimerHandle_t timer) {
+    HexapodMotion::GetInstance().Stand();
+    xTimerDelete(timer, 0);
+}
+
+void HexapodMotion::Lunge(uint8_t intensity, uint32_t duration_ms) {
+    ESP_LOGI(TAG, "Lunge intensity=%d duration=%ums", intensity, duration_ms);
+    if (!servo_controller_) {
+        ESP_LOGE(TAG, "Lunge: ServoController not initialized");
+        return;
+    }
+    is_moving_ = true;
+    // Lean forward and hold
+    float lunge_pose[HexapodConst::NUM_SERVOS];
+    for (int leg = 0; leg < 6; leg++) {
+        lunge_pose[leg * 3 + 0] = HexapodConst::NEUTRAL_ANGLE_COXA;
+        lunge_pose[leg * 3 + 1] = 60.0f; // Lean forward
+        lunge_pose[leg * 3 + 2] = 120.0f; // Partial crouch
+    }
+    servo_controller_->SetServoAngles(lunge_pose);
+    // Auto-return to stand after duration
+    uint32_t ms = duration_ms > 0 ? duration_ms : 1000;
+    TimerHandle_t timer = xTimerCreate("lunge_timer", pdMS_TO_TICKS(ms), pdFALSE, nullptr, lunge_timer_callback);
+    if (timer) {
+        xTimerStart(timer, 0);
+    } else {
+        ESP_LOGE(TAG, "Lunge: Failed to create timer");
+        is_moving_ = false;
+    }
 }
 
 void HexapodMotion::Stand() {
     ESP_LOGI(TAG, "Stand");
     is_moving_ = false;
+    GaitGenerator::GetInstance().Stop();
     servo_controller_->SetNeutral();
 }
 
 void HexapodMotion::Sit() {
     ESP_LOGI(TAG, "Sit");
     is_moving_ = false;
+    GaitGenerator::GetInstance().Stop();
 
     float sit_pose[HexapodConst::NUM_SERVOS];
     for (int leg = 0; leg < 6; leg++) {
@@ -81,8 +137,14 @@ void HexapodMotion::Sit() {
 }
 
 void HexapodMotion::Stop() {
-    ESP_LOGI(TAG, "Stop");
+    ESP_LOGI(TAG, "==== MOTION CMD: Stop ====");
+    ESP_LOGI(TAG, "-> Previous is_moving_=%d", is_moving_);
+    bool was_moving = is_moving_;
     is_moving_ = false;
+    GaitGenerator::GetInstance().Stop();
+    if (was_moving) {
+        servo_controller_->SetNeutral();
+    }
     servo_controller_->StopAll();
 }
 
@@ -169,4 +231,39 @@ void HexapodMotion::GenerateDanceMotion(uint8_t intensity) {
         pose[leg * 3 + 2] = HexapodConst::TIBIA_ANGLE_TURN;
     }
     servo_controller_->SetServoAngles(pose);
+}
+
+void HexapodMotion::SweepTest() {
+    ESP_LOGI(TAG, "SweepTest: 0 to 180 degrees sweep on Coxa joints");
+    is_moving_ = false;
+
+    float pose[HexapodConst::NUM_SERVOS];
+
+    // Sweep from 45 to 135 to 45 (Wait, user wants 0 to 180!)
+    // Sweep from 0 to 180
+    for (int angle = 0; angle <= 180; angle += 2) {
+        for (int leg = 0; leg < 6; leg++) {
+            pose[leg * 3 + 0] = angle;  // Coxa
+            pose[leg * 3 + 1] = 90.0f;  // Femur
+            pose[leg * 3 + 2] = 90.0f;  // Tibia
+        }
+        servo_controller_->SetServoAngles(pose);
+        vTaskDelay(pdMS_TO_TICKS(10)); // 10ms per 2 degrees = 900ms for 180 degrees
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    // Sweep back to 0
+    for (int angle = 180; angle >= 0; angle -= 2) {
+        for (int leg = 0; leg < 6; leg++) {
+            pose[leg * 3 + 0] = angle;
+            pose[leg * 3 + 1] = 90.0f;
+            pose[leg * 3 + 2] = 90.0f;
+        }
+        servo_controller_->SetServoAngles(pose);
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    // Return to neutral
+    Stand();
 }

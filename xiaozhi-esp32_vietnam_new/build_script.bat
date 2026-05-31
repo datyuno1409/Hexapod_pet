@@ -1,19 +1,25 @@
 @echo off
-call "D:\Espressif\frameworks\esp-idf-v5.5.4\export.bat"
+setlocal
 
-cd /d D:\Robot\Hexapod_pet\xiaozhi-esp32_vietnam_new
+echo ========================================================
+echo Building Hexapod Bot firmware (ESP-IDF)...
+echo ========================================================
 
-echo ======================================
-echo SETTING TARGET TO ESP32-S3
-echo ======================================
-idf.py set-target esp32s3
+cd /d "%~dp0"
+call select_board.bat hexapod
+if errorlevel 1 exit /b 1
+call D:\Espressif\frameworks\esp-idf-v5.5.4\export.bat
+if errorlevel 1 exit /b 1
+call idf.py set-target esp32s3
+if errorlevel 1 exit /b 1
+call idf.py build
+if errorlevel 1 exit /b 1
 
-echo ======================================
-echo BUILDING AND FLASHING ESP-IDF PROJECT
-echo ======================================
+echo ========================================================
+echo Build complete for Hexapod Bot! Flashing to COM10...
+echo ========================================================
+call idf.py -p COM10 flash monitor
+if errorlevel 1 exit /b 1
 
-idf.py -p COM10 -b 921600 build flash 2>&1
+endlocal
 
-echo ======================================
-echo BUILD EXIT CODE: %ERRORLEVEL%
-echo ======================================

@@ -559,6 +559,10 @@ void Application::Start() {
     protocol_->OnIncomingJson([this, display](const cJSON* root) {
         // Parse JSON data
         auto type = cJSON_GetObjectItem(root, "type");
+        if (!cJSON_IsString(type) || !type->valuestring) {
+            ESP_LOGW(TAG, "Invalid message: missing or non-string 'type'");
+            return;
+        }
         if (strcmp(type->valuestring, "tts") == 0) {
             auto state = cJSON_GetObjectItem(root, "state");
             if (strcmp(state->valuestring, "start") == 0) {

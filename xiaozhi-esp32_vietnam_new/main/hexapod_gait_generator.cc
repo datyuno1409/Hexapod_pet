@@ -26,7 +26,8 @@ GaitGenerator::GaitGenerator()
       motion_duration_ms_(0),
       gait_cycle_time_ms_(600),  // Default: tripod
       is_walking_(false),
-      is_paused_(false) {
+      is_paused_(false),
+	      pause_start_time_(0) {
     ESP_LOGI(TAG, "GaitGenerator created (singleton)");
 }
 
@@ -61,6 +62,12 @@ void GaitGenerator::Walk(GaitType gait, uint8_t speed, Direction dir, uint32_t d
     // Clamp speed to 0-100
     speed_percent_ = (speed > HexapodConst::MAX_SPEED) ? HexapodConst::MAX_SPEED : speed;
 
+    if (duration_ms == 0 && is_walking_ && !is_paused_ && current_gait_ == gait && current_dir_ == dir) {
+        motion_duration_ms_ = 0;
+        ESP_LOGD(TAG, "Continuous walk refresh: gait=%d speed=%d%% dir=%d", gait, speed_percent_, dir);
+        return;
+    }
+
     // Set gait parameters
     current_gait_ = gait;
     current_dir_ = dir;
@@ -79,6 +86,9 @@ void GaitGenerator::Walk(GaitType gait, uint8_t speed, Direction dir, uint32_t d
             break;
         case WAVE:
             gait_cycle_time_ms_ = HexapodConst::WAVE_CYCLE_TIME_MS;
+            break;
+        case BI_GAIT:
+            gait_cycle_time_ms_ = HexapodConst::TRIPOD_CYCLE_TIME_MS;
             break;
         default:
             gait_cycle_time_ms_ = HexapodConst::TRIPOD_CYCLE_TIME_MS;
@@ -99,6 +109,9 @@ void GaitGenerator::Stop() {
         return;
     }
 
+    ESP_LOGI(TAG, "==== GAIT GENERATOR: Stop ====");
+    ESP_LOGI(TAG, "-> Elapsed time: %lu ms, Target duration: %lu ms", GetElapsedTime(), motion_duration_ms_);
+
     is_walking_ = false;
     is_paused_ = false;
 
@@ -111,6 +124,7 @@ void GaitGenerator::Stop() {
 void GaitGenerator::Pause() {
     if (is_walking_ && !is_paused_) {
         is_paused_ = true;
+	        pause_start_time_ = esp_timer_get_time() / 1000;
         ESP_LOGI(TAG, "Motion paused");
     }
 }
@@ -119,8 +133,9 @@ void GaitGenerator::Resume() {
     if (is_walking_ && is_paused_) {
         is_paused_ = false;
         // Adjust motion_start_time to account for pause duration
-        // WHY: We don't want the pause duration to shift the gait phase
-        motion_start_time_ = esp_timer_get_time() / 1000 - GetElapsedTime();
+        uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+        uint32_t pause_duration = now - pause_start_time_;
+        motion_start_time_ += pause_duration;
         ESP_LOGI(TAG, "Motion resumed");
     }
 }
@@ -148,13 +163,12 @@ void GaitGenerator::Update() {
     uint32_t elapsed = GetElapsedTime();
 
     // Check if motion duration has expired
-    if (elapsed >= motion_duration_ms_) {
+    if (motion_duration_ms_ > 0 && elapsed >= motion_duration_ms_) {
         Stop();
         return;
     }
 
     // Update gait phase and compute servo angles
-    UpdateGaitPhase();
     ComputeServoAngles();
 
     // Send commands to servo controller
@@ -193,6 +207,16 @@ void GaitGenerator::ComputeServoAngles() {
     float speed_scale = speed_percent_ / 100.0f;
 
     for (int leg = 0; leg < 6; leg++) {
+        // Special case for JUMP: skip IK and use direct angle computation
+        if (current_gait_ == JUMP) {
+            LegPose pose = ComputeLegIK(leg, phase_0_to_1);
+            int servo_base = leg * 3;
+            target_angles_[servo_base + 0] = pose.coxa;
+            target_angles_[servo_base + 1] = pose.femur;
+            target_angles_[servo_base + 2] = pose.tibia;
+            continue;
+        }
+
         float x, y, z;
 
         // Compute foot position using gait-specific kinematics
@@ -205,6 +229,9 @@ void GaitGenerator::ComputeServoAngles() {
                 break;
             case WAVE:
                 WaveGait::ComputeFootPosition(leg, phase_0_to_1, dir, x, y, z);
+                break;
+            case BI_GAIT:
+                TripodGait::ComputeFootPosition(leg, phase_0_to_1, dir, x, y, z);
                 break;
             default:
                 TripodGait::ComputeFootPosition(leg, phase_0_to_1, dir, x, y, z);
@@ -246,87 +273,118 @@ LegPose GaitGenerator::ComputeLegIK(int leg_id, float phase_0_to_1) {
 
     switch (current_gait_) {
         case TRIPOD:
-            leg_phase = GetTripodPhase(phase_0_to_1);
+            leg_phase = GetTripodPhase(phase_0_to_1, leg_id);
             break;
         case RIPPLE:
-            leg_phase = GetRipplePhase(phase_0_to_1);
+            leg_phase = GetRipplePhase(phase_0_to_1, leg_id);
             break;
         case WAVE:
-            leg_phase = GetWavePhase(phase_0_to_1);
+            leg_phase = GetWavePhase(phase_0_to_1, leg_id);
+            break;
+        case BI_GAIT:
+            leg_phase = GetBiGaitPhase(phase_0_to_1, leg_id);
+            break;
+        case JUMP:
+            leg_phase = GetJumpPhase(phase_0_to_1, leg_id);
             break;
     }
 
-    // Determine if leg is swinging or pushing
-    // For now, simplified tripod logic
-    // (Full gait kinematics in dedicated gait files)
-
-    bool is_swinging = (leg_phase > 0.5f);  // Simplified: first half push, second half swing
-
-    if (is_swinging) {
-        // Swing phase: leg moves through air
-        // WHY sine wave?
-        //   Smooth acceleration (starts slow, peaks, ends slow)
-        //   Natural-looking motion like a pendulum
-        //   Math: sin(0)=0, sin(π/2)=1, sin(π)=0
-
-        float swing_local_phase = (leg_phase - 0.5f) * 2.0f;  // Normalize 0.5-1.0 to 0-1
-
-        // Forward/backward swing
-        float swing_forward = HexapodConst::SWING_AMPLITUDE_DEG * std::sin(swing_local_phase * M_PI);
-        // Height swing
-        float swing_height = HexapodConst::SWING_AMPLITUDE_DEG * std::sin(swing_local_phase * M_PI);
-
-        pose.coxa = HexapodConst::NEUTRAL_ANGLE_COXA;                      // No hip rotation in swing
-        pose.femur = HexapodConst::NEUTRAL_ANGLE_FEMUR + swing_forward;    // Forward swing
-        pose.tibia = HexapodConst::NEUTRAL_ANGLE_TIBIA - swing_height;     // Knee lifts during swing
+    // Apply IK based on gait
+    if (current_gait_ == JUMP) {
+        // Jump: crouch (0-0.5), explode upward (0.5-0.7), land absorb (0.7-1.0)
+        if (leg_phase < 0.5f) {
+            // Crouch: compress legs
+            pose.coxa = HexapodConst::NEUTRAL_ANGLE_COXA;
+            pose.femur = HexapodConst::FEMUR_ANGLE_CROUCH;     // ~45°
+            pose.tibia = HexapodConst::TIBIA_ANGLE_CROUCH_MIN; // ~60° (bent)
+        } else if (leg_phase < 0.7f) {
+            // Explode upward: extend legs rapidly
+            pose.coxa = HexapodConst::NEUTRAL_ANGLE_COXA;
+            pose.femur = HexapodConst::NEUTRAL_ANGLE_FEMUR;
+            pose.tibia = HexapodConst::TIBIA_ANGLE_EXTENDED;   // ~120° (straight)
+        } else {
+            // Land absorb: bend knees again to cushion landing
+            pose.coxa = HexapodConst::NEUTRAL_ANGLE_COXA;
+            pose.femur = HexapodConst::FEMUR_ANGLE_CROUCH;
+            pose.tibia = HexapodConst::TIBIA_ANGLE_CROUCH_MIN;
+        }
     } else {
-        // Stance phase: leg on ground, pushes body
-        float stance_local_phase = leg_phase * 2.0f;  // Normalize 0-0.5 to 0-1
+        // Existing tripod-based IK for walking/turning
+        bool is_swinging = (leg_phase > 0.5f);
 
-        // Push backward
-        float push_back = -HexapodConst::STANCE_AMPLITUDE_DEG * std::sin(stance_local_phase * M_PI);
+        // Compute coxa offset for lateral turning
+        float coxa_offset = 0.0f;
+        if (current_dir_ == LEFT || current_dir_ == RIGHT) {
+            float turn_scale = (current_dir_ == LEFT) ? 1.0f : -1.0f;
+            float side = (leg_id % 2 == 0) ? turn_scale : -turn_scale;
+            coxa_offset = side * HexapodConst::COXA_TURN_OFFSET_DEG;
+        }
 
-        pose.coxa = HexapodConst::NEUTRAL_ANGLE_COXA;                      // No hip rotation in stance
-        pose.femur = HexapodConst::NEUTRAL_ANGLE_FEMUR + push_back;        // Push backward slightly
-        pose.tibia = HexapodConst::NEUTRAL_ANGLE_TIBIA + HexapodConst::STANCE_AMPLITUDE_DEG;   // Slightly bent for stability
+        if (is_swinging) {
+            float swing_local_phase = (leg_phase - 0.5f) * 2.0f;
+            float swing_forward = HexapodConst::SWING_AMPLITUDE_DEG * std::sin(swing_local_phase * M_PI);
+            float swing_height = HexapodConst::SWING_HEIGHT_AMPLITUDE_DEG * std::sin(swing_local_phase * M_PI);
+
+            pose.coxa = HexapodConst::NEUTRAL_ANGLE_COXA + coxa_offset;
+            pose.femur = HexapodConst::NEUTRAL_ANGLE_FEMUR + swing_forward;
+            pose.tibia = HexapodConst::NEUTRAL_ANGLE_TIBIA - swing_height;
+        } else {
+            float stance_local_phase = leg_phase * 2.0f;
+            float push_back = -HexapodConst::STANCE_AMPLITUDE_DEG * std::sin(stance_local_phase * M_PI);
+
+            pose.coxa = HexapodConst::NEUTRAL_ANGLE_COXA + coxa_offset;
+            pose.femur = HexapodConst::NEUTRAL_ANGLE_FEMUR + push_back;
+            pose.tibia = HexapodConst::NEUTRAL_ANGLE_TIBIA + HexapodConst::STANCE_AMPLITUDE_DEG;
+        }
     }
 
     return pose;
 }
 
-float GaitGenerator::GetTripodPhase(float norm_time) {
-    // WHY tripod phase?
-    //   Tripod: 3 legs swing, 3 push, alternating
-    //   Phase 0.0-0.5: Legs 0,2,4 swing
-    //   Phase 0.5-1.0: Legs 1,3,5 swing
-    //
-    // For leg 0 (even): swings in second half (0.5-1.0)
-    // For leg 1 (odd): swings in first half (0.0-0.5)
-
-    // Return the normalized time as-is for now
-    // (Leg-specific phase adjustment happens in ComputeLegIK)
-    return norm_time;
+float GaitGenerator::GetTripodPhase(float norm_time, int leg_id) {
+    // Tripod: Group A (even legs 0,2,4) swing in first half (0-0.5)
+    //         Group B (odd legs 1,3,5) swing in second half (0.5-1.0)
+    bool is_group_a = (leg_id % 2 == 0);
+    if (is_group_a) {
+        // Group A swings during 0.0-0.5
+        return norm_time < 0.5f ? norm_time * 2.0f : (norm_time - 0.5f) * 2.0f;
+    } else {
+        // Group B swings during 0.5-1.0
+        return norm_time >= 0.5f ? (norm_time - 0.5f) * 2.0f : norm_time * 2.0f;
+    }
 }
 
-float GaitGenerator::GetRipplePhase(float norm_time) {
-    // WHY ripple phase?
-    //   Ripple: Each leg lifts sequentially
-    //   Leg 0: 0.0-0.167
-    //   Leg 1: 0.167-0.333
-    //   ... etc
-    //
-    // For now, return as-is. Full implementation in ripple_gait.h
-
-    return norm_time;
+float GaitGenerator::GetRipplePhase(float norm_time, int leg_id) {
+    // Ripple: each leg lifts sequentially for 1/6 of cycle
+    // Leg i swings during [i/6, (i+1)/6]
+    float leg_offset = static_cast<float>(leg_id) / 6.0f;
+    float swing_frac = 1.0f / 6.0f;
+    float shifted = norm_time - leg_offset;
+    if (shifted < 0.0f) shifted += 1.0f;
+    // Return phase within this leg's swing window (0-1 during swing)
+    return shifted / swing_frac;
 }
 
-float GaitGenerator::GetWavePhase(float norm_time) {
-    // WHY wave phase?
-    //   Wave: Sequential wave from rear to front
-    //   Rear leg (leg 4/5) lifts first
-    //
-    // For now, return as-is. Full implementation in wave_gait.h
+float GaitGenerator::GetWavePhase(float norm_time, int leg_id) {
+    // Wave: sequential from back to front (leg 4,5,2,3,0,1)
+    static constexpr int wave_order[6] = {4, 5, 2, 3, 0, 1};
+    int wave_index = 0;
+    for (int i = 0; i < 6; i++) {
+        if (wave_order[i] == leg_id) { wave_index = i; break; }
+    }
+    float leg_offset = static_cast<float>(wave_index) / 6.0f;
+    float swing_frac = 1.0f / 6.0f;
+    float shifted = norm_time - leg_offset;
+    if (shifted < 0.0f) shifted += 1.0f;
+    return shifted / swing_frac;
+}
 
+float GaitGenerator::GetBiGaitPhase(float norm_time, int leg_id) {
+    return GetTripodPhase(norm_time, leg_id);
+}
+
+float GaitGenerator::GetJumpPhase(float norm_time, int leg_id) {
+    // Jump is a simple linear phase from 0 to 1
     return norm_time;
 }
 

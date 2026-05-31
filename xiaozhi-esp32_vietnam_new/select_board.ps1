@@ -1,4 +1,4 @@
-param (
+﻿param (
     [string]$TargetBoard
 )
 
@@ -71,6 +71,13 @@ $lines = @(
     "CONFIG_FATFS_API_ENCODING_UTF_8=y",
     "CONFIG_FATFS_FS_LOCK=4",
     "",
+    "# Camera Configuration",
+    "CONFIG_CAMERA_OV5640=y",
+    "CONFIG_CAMERA_OV5640_AUTO_DETECT_DVP_INTERFACE_SENSOR=y",
+    "",
+    "# Enable ESP32-S3 Hardware JPEG Encoder for faster camera stream",
+    "CONFIG_XIAOZHI_ENABLE_HARDWARE_JPEG_ENCODER=y",
+    "",
     "# Selected Board Type (ghi boi select_board.ps1 - khong sua thu cong)",
     $BoardCfg,
     ""
@@ -83,17 +90,25 @@ $filePath = Join-Path (Get-Location) $ConfigFile
 [System.IO.File]::WriteAllText($filePath, $content, $encoding)
 
 # Xoa folder build va file sdkconfig cu de ESP-IDF generate lai tu defaults
-# (giu lai managed_components de build nhanh hon)
 if (Test-Path "build") {
     Write-Host "[SelectBoard] Xoa thu muc build cu..."
-    Remove-Item -Recurse -Force "build"
+    try {
+        Remove-Item -Recurse -Force "build" -ErrorAction Stop
+    } catch {
+        Write-Host "========================================================" -ForegroundColor Red
+        Write-Host "LOI: Khong the xoa thu muc 'build'!" -ForegroundColor Red
+        Write-Host "Co the ban dang mo Terminal chay 'idf.py monitor'." -ForegroundColor Red
+        Write-Host "Vui long nhan Ctrl+C o cac Terminal khac roi thu lai!" -ForegroundColor Red
+        Write-Host "========================================================" -ForegroundColor Red
+        exit 1
+    }
 }
 if (Test-Path "sdkconfig") {
     Write-Host "[SelectBoard] Xoa file sdkconfig cu de cap nhat cau hinh moi..."
-    Remove-Item -Force "sdkconfig"
+    Remove-Item -Force "sdkconfig" -ErrorAction Ignore
 }
 if (Test-Path "sdkconfig.old") {
-    Remove-Item -Force "sdkconfig.old"
+    Remove-Item -Force "sdkconfig.old" -ErrorAction Ignore
 }
 
 Write-Host "========================================================"
@@ -105,3 +120,4 @@ Write-Host "  idf.py -p COMx -b 921600 build flash"
 Write-Host "========================================================"
 
 exit 0
+

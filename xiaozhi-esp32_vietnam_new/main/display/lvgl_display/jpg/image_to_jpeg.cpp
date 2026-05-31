@@ -239,12 +239,45 @@ static uint8_t* convert_input_to_hw_encoder_buf(const uint8_t* src, uint16_t wid
         return (uint8_t*)buf;
     }
 
+    if (format == V4L2_PIX_FMT_YUV422P) {
+        int sz = (int)width * (int)height * 2;
+        const uint8_t* y_plane = src;
+        const uint8_t* u_plane = y_plane + (int)width * (int)height;
+        const uint8_t* v_plane = u_plane + ((int)width / 2) * (int)height;
+        uint8_t* buf = (uint8_t*)malloc_psram(sz);
+        if (!buf)
+            return NULL;
+        uint8_t* dst = buf;
+        for (int y = 0; y < height; y++) {
+            const uint8_t* y_row = y_plane + y * (int)width;
+            const uint8_t* u_row = u_plane + y * ((int)width / 2);
+            const uint8_t* v_row = v_plane + y * ((int)width / 2);
+            for (int x = 0; x < width; x += 2) {
+                uint8_t y0 = y_row[x + 0];
+                uint8_t y1 = y_row[x + 1];
+                uint8_t cb = u_row[x / 2];
+                uint8_t cr = v_row[x / 2];
+                // 硬件需要的大端 YUV422: 内存中为 Cb, Y0, Cr, Y1
+                dst[0] = cb;
+                dst[1] = y0;
+                dst[2] = cr;
+                dst[3] = y1;
+                dst += 4;
+            }
+        }
+        if (out_fmt)
+            *out_fmt = JPEG_ENCODE_IN_FORMAT_YUV422;
+        if (out_size)
+            *out_size = sz;
+        return buf;
+    }
+
     return NULL;
 }
 
 static bool encode_with_hw_jpeg(const uint8_t* src, size_t src_len, uint16_t width, uint16_t height,
                                 v4l2_pix_fmt_t format, uint8_t quality, uint8_t** jpg_out, size_t* jpg_out_len,
-                                jpg_out_cb cb, void* cb_arg) {
+                                jpg_out_cb cb, void* cb_arg, uint8_t* prealloc_buf = nullptr, size_t prealloc_size = 0) {
     if (quality < 1)
         quality = 1;
     if (quality > 100)
@@ -273,21 +306,33 @@ static bool encode_with_hw_jpeg(const uint8_t* src, size_t src_len, uint16_t wid
     size_t out_cap = (size_t)width * (size_t)height * 3 / 2 + 64 * 1024;
     if (out_cap < 128 * 1024)
         out_cap = 128 * 1024;
-    jpeg_encode_memory_alloc_cfg_t jpeg_enc_output_mem_cfg = { .buffer_direction = JPEG_ENC_ALLOC_OUTPUT_BUFFER };
-    size_t out_cap_aligned = 0;
-    uint8_t* outbuf = (uint8_t*)jpeg_alloc_encoder_mem(out_cap, &jpeg_enc_output_mem_cfg, &out_cap_aligned);
-    if (!outbuf) {
-        free(enc_in);
-        ESP_LOGE(TAG, "alloc out buffer failed");
-        return false;
+
+    uint8_t* outbuf = nullptr;
+    bool outbuf_owner = true;  // true nếu cần free, false nếu dùng prealloc
+
+    if (prealloc_buf && prealloc_size >= out_cap) {
+        outbuf = prealloc_buf;
+        outbuf_owner = false;
+    } else {
+        jpeg_encode_memory_alloc_cfg_t jpeg_enc_output_mem_cfg = { .buffer_direction = JPEG_ENC_ALLOC_OUTPUT_BUFFER };
+        size_t out_cap_aligned = 0;
+        outbuf = (uint8_t*)jpeg_alloc_encoder_mem(out_cap, &jpeg_enc_output_mem_cfg, &out_cap_aligned);
+        if (!outbuf) {
+            free(enc_in);
+            ESP_LOGE(TAG, "alloc out buffer failed");
+            return false;
+        }
+        out_cap = out_cap_aligned;  // Use actual aligned size for processing
     }
 
     uint32_t out_len = 0;
-    esp_err_t er = jpeg_encoder_process(s_hw_jpeg_handle, &enc_cfg, enc_in, (uint32_t)enc_in_size, outbuf, (uint32_t)out_cap_aligned, &out_len);
+    // Use out_cap (aligned if allocated, original if using prealloc)
+    size_t proc_cap = outbuf_owner ? out_cap_aligned : out_cap;
+    esp_err_t er = jpeg_encoder_process(s_hw_jpeg_handle, &enc_cfg, enc_in, (uint32_t)enc_in_size, outbuf, (uint32_t)proc_cap, &out_len);
     free(enc_in);
 
     if (er != ESP_OK) {
-        free(outbuf);
+        if (outbuf_owner) free(outbuf);
         ESP_LOGE(TAG, "jpeg_encoder_process failed: %d", (int)er);
         return false;
     }
@@ -295,7 +340,7 @@ static bool encode_with_hw_jpeg(const uint8_t* src, size_t src_len, uint16_t wid
     if (cb) {
         cb(cb_arg, 0, outbuf, (size_t)out_len);
         cb(cb_arg, 1, NULL, 0);
-        free(outbuf);
+        if (outbuf_owner) free(outbuf);
         if (jpg_out)
             *jpg_out = NULL;
         if (jpg_out_len)
@@ -309,14 +354,14 @@ static bool encode_with_hw_jpeg(const uint8_t* src, size_t src_len, uint16_t wid
         return true;
     }
 
-    free(outbuf);
+    if (outbuf_owner) free(outbuf);
     return true;
 }
 #endif // CONFIG_XIAOZHI_ENABLE_HARDWARE_JPEG_ENCODER
 
 static bool encode_with_esp_new_jpeg(const uint8_t* src, size_t src_len, uint16_t width, uint16_t height,
                                      v4l2_pix_fmt_t format, uint8_t quality, uint8_t** jpg_out, size_t* jpg_out_len,
-                                     jpg_out_cb cb, void* cb_arg) {
+                                     jpg_out_cb cb, void* cb_arg, uint8_t* prealloc_buf = nullptr, size_t prealloc_size = 0) {
     if (quality < 1)
         quality = 1;
     if (quality > 100)
@@ -351,12 +396,21 @@ static bool encode_with_esp_new_jpeg(const uint8_t* src, size_t src_len, uint16_
     size_t out_cap = (size_t)width * (size_t)height * 3 / 2 + 64 * 1024;
     if (out_cap < 128 * 1024)
         out_cap = 128 * 1024;
-    uint8_t* outbuf = (uint8_t*)malloc_psram(out_cap);
-    if (!outbuf) {
-        jpeg_enc_close(h);
-        jpeg_free_align(enc_in);
-        ESP_LOGE(TAG, "alloc out buffer failed");
-        return false;
+
+    uint8_t* outbuf = nullptr;
+    bool outbuf_owner = true;
+
+    if (prealloc_buf && prealloc_size >= out_cap) {
+        outbuf = prealloc_buf;
+        outbuf_owner = false;
+    } else {
+        outbuf = (uint8_t*)malloc_psram(out_cap);
+        if (!outbuf) {
+            jpeg_enc_close(h);
+            jpeg_free_align(enc_in);
+            ESP_LOGE(TAG, "alloc out buffer failed");
+            return false;
+        }
     }
 
     int out_len = 0;
@@ -365,15 +419,15 @@ static bool encode_with_esp_new_jpeg(const uint8_t* src, size_t src_len, uint16_
     jpeg_free_align(enc_in);
 
     if (ret != JPEG_ERR_OK) {
-        free(outbuf);
+        if (outbuf_owner) free(outbuf);
         ESP_LOGE(TAG, "jpeg_enc_process failed: %d", (int)ret);
         return false;
     }
 
     if (cb) {
         cb(cb_arg, 0, outbuf, (size_t)out_len);
-        cb(cb_arg, 1, NULL, 0);  // 结束信号
-        free(outbuf);
+        cb(cb_arg, 1, NULL, 0);
+        if (outbuf_owner) free(outbuf);
         if (jpg_out)
             *jpg_out = NULL;
         if (jpg_out_len)
@@ -387,19 +441,19 @@ static bool encode_with_esp_new_jpeg(const uint8_t* src, size_t src_len, uint16_
         return true;
     }
 
-    free(outbuf);
+    if (outbuf_owner) free(outbuf);
     return true;
 }
 
 bool image_to_jpeg(uint8_t* src, size_t src_len, uint16_t width, uint16_t height, v4l2_pix_fmt_t format,
-                   uint8_t quality, uint8_t** out, size_t* out_len) {
+                   uint8_t quality, uint8_t** out, size_t* out_len, uint8_t* prealloc_buf, size_t prealloc_size) {
 #if CONFIG_XIAOZHI_ENABLE_HARDWARE_JPEG_ENCODER
-    if (encode_with_hw_jpeg(src, src_len, width, height, format, quality, out, out_len, NULL, NULL)) {
+    if (encode_with_hw_jpeg(src, src_len, width, height, format, quality, out, out_len, NULL, NULL, prealloc_buf, prealloc_size)) {
         return true;
     }
     // Fallback to esp_new_jpeg
 #endif
-    return encode_with_esp_new_jpeg(src, src_len, width, height, format, quality, out, out_len, NULL, NULL);
+    return encode_with_esp_new_jpeg(src, src_len, width, height, format, quality, out, out_len, NULL, NULL, prealloc_buf, prealloc_size);
 }
 
 bool image_to_jpeg_cb(uint8_t* src, size_t src_len, uint16_t width, uint16_t height, v4l2_pix_fmt_t format,

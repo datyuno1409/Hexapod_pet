@@ -149,8 +149,10 @@ void HexapodUartLink::ParseByte(uint8_t byte) {
         case ParseState::LenH:
             rx_len_ |= static_cast<uint16_t>(byte) << 8;
             if (rx_len_ > kMaxPayload) { ResetParser(); break; }
-            rx_payload_.clear();
-            rx_payload_.reserve(rx_len_);
+            if (rx_len_ > 0) {
+                rx_payload_.clear();
+                rx_payload_.reserve(rx_len_);
+            }
             state_ = rx_len_ ? ParseState::Payload : ParseState::CrcL;
             break;
         case ParseState::Payload:
@@ -175,7 +177,13 @@ void HexapodUartLink::ParseByte(uint8_t byte) {
             if (expected == rx_crc_) {
                 if (handler_) handler_(static_cast<MessageType>(rx_type_), rx_seq_, rx_payload_);
             } else {
-                ESP_LOGW(TAG, "CRC mismatch seq=%u", rx_seq_);
+                static uint32_t crc_error_count = 0;
+                crc_error_count++;
+                if (crc_error_count % 100 == 0) {
+                    ESP_LOGW(TAG, "CRC errors: %u", crc_error_count);
+                } else {
+                    ESP_LOGW(TAG, "CRC mismatch seq=%u", rx_seq_);
+                }
             }
             ResetParser();
             break;

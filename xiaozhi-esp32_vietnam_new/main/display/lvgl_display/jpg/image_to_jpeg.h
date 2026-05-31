@@ -21,25 +21,29 @@ typedef size_t (*jpg_out_cb)(void *arg, size_t index, const void *data, size_t l
 
 /**
  * @brief 将图像格式高效转换为JPEG
- * 
+ *
  * 这个函数使用优化的JPEG编码器进行编码，主要特点：
  * - 节省约8KB的SRAM使用（静态变量改为堆分配）
  * - 支持多种图像格式输入
  * - 高质量JPEG输出
- * 
+ * - 支持预分配输出缓冲区以减少堆碎片
+ *
  * @param src       源图像数据
  * @param src_len   源图像数据长度
  * @param width     图像宽度
- * @param height    图像高度  
+ * @param height    图像高度
  * @param format    图像格式 (PIXFORMAT_RGB565, PIXFORMAT_RGB888, 等)
  * @param quality   JPEG质量 (1-100)
- * @param out       输出JPEG数据指针 (需要调用者释放)
+ * @param out       输出JPEG数据指针 (需要调用者释放，除非提供了prealloc_buf)
  * @param out_len   输出JPEG数据长度
- * 
+ * @param prealloc_buf 预分配的输出缓冲区 (可选, 可为NULL)
+ * @param prealloc_size 预分配缓冲区大小 (可选)
+ *
  * @return true 成功, false 失败
  */
-bool image_to_jpeg(uint8_t *src, size_t src_len, uint16_t width, uint16_t height, 
-                   v4l2_pix_fmt_t format, uint8_t quality, uint8_t **out, size_t *out_len);
+bool image_to_jpeg(uint8_t *src, size_t src_len, uint16_t width, uint16_t height,
+                   v4l2_pix_fmt_t format, uint8_t quality, uint8_t **out, size_t *out_len,
+                   uint8_t *prealloc_buf = nullptr, size_t prealloc_size = 0);
 
 /**
  * @brief 将图像格式转换为JPEG（回调版本）
