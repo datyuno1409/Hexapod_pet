@@ -4,8 +4,6 @@ echo ========================================================
 echo Building Hexapod Bot firmware...
 echo ========================================================
 
-cd /d "%~dp0xiaozhi-esp32_vietnam_new"
-
 REM Call ESP-IDF export to set up environment
 echo Setting up ESP-IDF environment...
 call D:\Espressif\frameworks\esp-idf-v5.5.4\export.bat

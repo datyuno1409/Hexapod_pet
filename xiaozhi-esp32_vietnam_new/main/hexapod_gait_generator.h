@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include "hexapod_constants.h"
 #include <string>
 #include <map>
 #include <esp_timer.h>
@@ -298,8 +300,13 @@ private:
     bool is_paused_;
 
     // Cached target servo angles (updated each cycle)
-    // Key: servo_id (0-17), Value: target angle in degrees
-    std::map<uint8_t, float> target_angles_;
+    // Fixed-size array for performance: index = servo_id (0-17), value = angle in degrees
+    std::array<float, HexapodConst::NUM_SERVOS> target_angles_;
+
+    // Performance monitoring
+    uint64_t last_compute_us_ = 0;
+    uint64_t max_compute_us_ = 0;
+    uint32_t compute_count_ = 0;
 };
 
 /**

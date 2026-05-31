@@ -1,6 +1,7 @@
 #include "hexapod_uart_bridge.h"
 
 #include "hexapod_uart_link.h"
+#include "hexapod_command_dispatcher.h"
 #include "sdkconfig.h"
 
 // ─── Chọn đúng config header theo board đang build (dùng Kconfig) ───────────
@@ -27,6 +28,7 @@
 
 #include <esp_log.h>
 #include <cJSON.h>
+#include "hexapod_constants.h"
 
 #define TAG "HexapodUartBridge"
 
@@ -147,8 +149,11 @@ void HexapodUartBridge::HandleMessage(uint8_t raw_type, uint8_t seq, const std::
                 ExecuteRobotCommand(payload);
                 HexapodUartLink::GetInstance().SendJson(HexapodUartLink::MessageType::Ack, R"({"status":"ok"})");
                 SendTelemetry();
+            } else if (role_ == Role::kMaster) {
+                // Master nhận lệnh từ UART $\rightarrow$ Forward tiếp xuống Bot
+                ESP_LOGI(TAG, "Master forwarding command to Bot...");
+                HexapodUartLink::GetInstance().Send(type, payload);
             } else {
-                // Master received a command back? Shouldn't happen, just ACK
                 ESP_LOGW(TAG, "Master received command type 0x%02x - unexpected", raw_type);
             }
             break;
@@ -165,33 +170,28 @@ void HexapodUartBridge::ExecuteRobotCommand(const std::string& payload) {
     cJSON* root = cJSON_Parse(payload.c_str());
     if (!root) return;
 
-    const cJSON* cmd = cJSON_GetObjectItem(root, "cmd");
-    const cJSON* action = cJSON_GetObjectItem(root, "action");
-    const cJSON* speed = cJSON_GetObjectItem(root, "speed");
-    const cJSON* duration = cJSON_GetObjectItem(root, "duration_ms");
-    const char* cmd_s = cJSON_IsString(cmd) ? cmd->valuestring : "";
-    const char* action_s = cJSON_IsString(action) ? action->valuestring : "";
-    uint8_t speed_v = cJSON_IsNumber(speed) ? static_cast<uint8_t>(speed->valueint) : 50;
-    uint32_t duration_v = cJSON_IsNumber(duration) ? static_cast<uint32_t>(duration->valueint) : 0;
+    CommandDispatcher::Dispatch(root,
+        [](const ParsedCommand& p) {
+            HexapodMotion& motion = HexapodMotion::GetInstance();
+            const std::string& action = p.motion_action;
+            if      (action == "forward")  motion.MoveForward(p.speed, p.duration_ms);
+            else if (action == "backward") motion.MoveBackward(p.speed, p.duration_ms);
+            else if (action == "left")     motion.TurnLeft(p.speed, p.duration_ms);
+            else if (action == "right")    motion.TurnRight(p.speed, p.duration_ms);
+            else if (action == "jump")     motion.Jump(p.speed);
+            else if (action == "sit")      motion.Sit();
+            else if (action == "dance")    motion.Dance(p.speed, p.duration_ms);
+            else if (action == "stand")    motion.Stand();
+            else if (action == "stop")     motion.Stop();
+            else ESP_LOGW(TAG, "Unknown motion action: %s", action.c_str());
+        },
+        [](const ParsedCommand& p) {
+            HexapodEmotionDisplay::GetInstance().ShowEmotion(p.emotion, p.emotion_text);
+        },
+        nullptr, // Camera not typically handled via UART on Bot
+        [this]() { SendTelemetry(); }
+    );
 
-    if (strcmp(cmd_s, "motion") == 0) {
-        if (strcmp(action_s, "forward") == 0) HexapodMotion::GetInstance().MoveForward(speed_v, duration_v);
-        else if (strcmp(action_s, "backward") == 0) HexapodMotion::GetInstance().MoveBackward(speed_v, duration_v);
-        else if (strcmp(action_s, "left") == 0) HexapodMotion::GetInstance().TurnLeft(speed_v, duration_v);
-        else if (strcmp(action_s, "right") == 0) HexapodMotion::GetInstance().TurnRight(speed_v, duration_v);
-        else if (strcmp(action_s, "jump") == 0) HexapodMotion::GetInstance().Jump(speed_v);
-        else if (strcmp(action_s, "dance") == 0) HexapodMotion::GetInstance().Dance(speed_v, duration_v);
-        else if (strcmp(action_s, "sit") == 0) HexapodMotion::GetInstance().Sit();
-        else if (strcmp(action_s, "stand") == 0) HexapodMotion::GetInstance().Stand();
-        else if (strcmp(action_s, "stop") == 0) HexapodMotion::GetInstance().Stop();
-    } else if (strcmp(cmd_s, "emotion") == 0) {
-        const cJSON* emotion = cJSON_GetObjectItem(root, "emotion");
-        const cJSON* text = cJSON_GetObjectItem(root, "text");
-        HexapodEmotionDisplay::GetInstance().ShowEmotion(cJSON_IsString(emotion) ? emotion->valuestring : "neutral",
-                                                          cJSON_IsString(text) ? text->valuestring : "");
-    } else if (strcmp(cmd_s, "ping") == 0) {
-        SendTelemetry();
-    }
     cJSON_Delete(root);
 }
 #else

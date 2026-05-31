@@ -79,4 +79,12 @@
 #define HEXAPOD_UART_RX_BUF_SIZE 4096
 #define HEXAPOD_UART_TX_BUF_SIZE 4096
 
+// ============================================================================
+// PCA9685 SERVO CONTROLLER (I2C for 18 servos)
+// ============================================================================
+#define SERVO_I2C_SDA           ((gpio_num_t)41)
+#define SERVO_I2C_SCL           ((gpio_num_t)42)
+#define SERVO_I2C_FREQ_HZ       (400 * 1000)  // 400 kHz
+#define SERVO_I2C_PORT          0
+
 #endif  // _HEXAPOD_VOICEBOT_CONFIG_H_

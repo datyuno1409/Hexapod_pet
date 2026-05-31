@@ -10,6 +10,10 @@
 #include "assets/lang_config.h"
 #include "backlight.h"
 #include "hexapod_uart_bridge.h"
+#include "hexapod_servo_controller.h"
+#include "hexapod_gait_generator.h"
+#include "hexapod_attack_patterns.h"
+#include "hexapod_protocol.h"
 #include <wifi_station.h>
 #include <esp_log.h>
 #include <driver/i2c_master.h>
@@ -30,6 +34,80 @@ private:
     Button boot_button_;
     Button volume_up_button_;
     Button volume_down_button_;
+
+    // Servo I2C bus and Motion Task
+    i2c_master_bus_handle_t servo_i2c_bus_ = nullptr;
+    TaskHandle_t motion_task_handle_ = nullptr;
+
+    void InitializeServoI2c() {
+        ESP_LOGI(TAG, "Initializing Servo I2C bus for PCA9685...");
+
+        i2c_master_bus_config_t bus_config = {
+            .i2c_port = (i2c_port_t)SERVO_I2C_PORT,
+            .sda_io_num = SERVO_I2C_SDA,
+            .scl_io_num = SERVO_I2C_SCL,
+            .clk_source = I2C_CLK_SRC_DEFAULT,
+            .glitch_ignore_cnt = 7,
+            .intr_priority = 0,
+            .trans_queue_depth = 0,
+            .flags = {
+                .enable_internal_pullup = 1,
+            },
+        };
+
+        ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &servo_i2c_bus_));
+        ESP_LOGI(TAG, "Servo I2C bus initialized (GPIO %d SDA, %d SCL)",
+                 SERVO_I2C_SDA, SERVO_I2C_SCL);
+    }
+
+    void InitializeMotionLayer() {
+        ESP_LOGI(TAG, "Initializing motion layer...");
+
+        auto &servo = ServoController::GetInstance();
+        if (!servo.Initialize(servo_i2c_bus_)) {
+            ESP_LOGE(TAG, "ServoController initialization failed!");
+            return;
+        }
+
+        auto &gait = GaitGenerator::GetInstance();
+        if (!gait.Initialize(&servo)) {
+            ESP_LOGE(TAG, "GaitGenerator initialization failed!");
+            return;
+        }
+
+        auto &attack = AttackPatterns::GetInstance();
+        if (!attack.Initialize(&gait, &servo)) {
+            ESP_LOGE(TAG, "AttackPatterns initialization failed!");
+            return;
+        }
+
+        // Create dedicated real-time task for motion updates (20Hz)
+        BaseType_t ok = xTaskCreatePinnedToCore(
+            [](void* arg) {
+                TickType_t last_wake = xTaskGetTickCount();
+                const TickType_t interval = pdMS_TO_TICKS(50); // 20Hz
+
+                while (true) {
+                    GaitGenerator::GetInstance().Update();
+                    AttackPatterns::GetInstance().UpdateFrame();
+                    vTaskDelayUntil(&last_wake, interval);
+                }
+            },
+            "motion_update",
+            4096,
+            nullptr,
+            15,
+            &motion_task_handle_,
+            0
+        );
+
+        if (ok != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create motion update task!");
+            return;
+        }
+
+        ESP_LOGI(TAG, "Motion layer ready: ServoController + GaitGenerator + AttackPatterns @ 20Hz (task priority 15, core 0)");
+    }
 
     // ========================================================================
     // TFT Display Initialization (ST7789 via SPI)
@@ -107,6 +185,20 @@ private:
             app.ToggleChatState();
         });
 
+        boot_button_.OnLongPress([this]() {
+            ESP_LOGI(TAG, "BOOT button long press: Spawning diagnostic motion task...");
+            xTaskCreate([](void* arg) {
+                ESP_LOGI(TAG, "Diagnostic Motion Task started");
+                HexapodProtocol::GetInstance().SendCommand("{\"cmd\":\"motion\",\"action\":\"stand\"}");
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                HexapodProtocol::GetInstance().SendCommand("{\"cmd\":\"motion\",\"action\":\"dance\",\"speed\":60,\"duration_ms\":3000}");
+                vTaskDelay(pdMS_TO_TICKS(4000));
+                HexapodProtocol::GetInstance().SendCommand("{\"cmd\":\"motion\",\"action\":\"sit\"}");
+                ESP_LOGI(TAG, "Diagnostic Motion Task finished");
+                vTaskDelete(nullptr);
+            }, "diag_motion", 4096, nullptr, 5, nullptr);
+        });
+
         // Volume up
         volume_up_button_.OnClick([this]() {
             auto codec = GetAudioCodec();
@@ -144,19 +236,25 @@ private:
 
 public:
     HexapodVoicebotBoard() :
-        boot_button_(BOOT_BUTTON_GPIO),
-        volume_up_button_(VOLUME_UP_BUTTON_GPIO),
-        volume_down_button_(VOLUME_DOWN_BUTTON_GPIO) {
+        boot_button_(BOOT_BUTTON_GPIO, false, 1000),
+        volume_up_button_(VOLUME_UP_BUTTON_GPIO, false, 1000),
+        volume_down_button_(VOLUME_DOWN_BUTTON_GPIO, false, 1000) {
         InitializeTftDisplay();
         InitializeButtons();
         GetBacklight()->RestoreBrightness();
+        InitializeServoI2c();
+        InitializeMotionLayer();
 
         // Initialize UART bridge for communication with Hexapod Bot board
         // VoiceBot acts as MASTER, sending commands to Bot (SLAVE)
 #ifdef HEXAPOD_UART_PORT
-        auto& uart_bridge = HexapodUartBridge::GetInstance();
-        uart_bridge.Start(HexapodUartBridge::Role::kMaster);
-        ESP_LOGI(TAG, "UART bridge initialized as MASTER for Hexapod Bot communication");
+        if (!ServoController::GetInstance().IsInitialized()) {
+            auto& uart_bridge = HexapodUartBridge::GetInstance();
+            uart_bridge.Start(HexapodUartBridge::Role::kMaster);
+            ESP_LOGI(TAG, "UART bridge initialized as MASTER for Hexapod Bot communication");
+        } else {
+            ESP_LOGI(TAG, "Local ServoController is initialized (diagnostic mode). Skipping UART bridge initialization to preserve Console UART (GPIO 43/44).");
+        }
 #endif
 
         // Set default safe volume to prevent MAX98357A distortion
@@ -180,16 +278,18 @@ public:
     virtual AudioCodec* GetAudioCodec() override {
 #ifdef AUDIO_I2S_METHOD_SIMPLEX
         // Simplex I2S: separate TX (speaker) and RX (microphone)
-        // Using 8-parameter constructor for INMP441 + MAX98357A
+        // Using 10-parameter constructor for INMP441 + MAX98357A
         static NoAudioCodecSimplex audio_codec(
             AUDIO_INPUT_SAMPLE_RATE,
             AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_I2S_SPK_GPIO_BCLK,
             AUDIO_I2S_SPK_GPIO_LRCK,
             AUDIO_I2S_SPK_GPIO_DOUT,
+            I2S_STD_SLOT_BOTH,
             AUDIO_I2S_MIC_GPIO_SCK,
             AUDIO_I2S_MIC_GPIO_WS,
-            AUDIO_I2S_MIC_GPIO_DIN
+            AUDIO_I2S_MIC_GPIO_DIN,
+            I2S_STD_SLOT_LEFT
         );
 #else
         static NoAudioCodecDuplex audio_codec(

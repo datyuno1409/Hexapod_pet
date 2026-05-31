@@ -62,9 +62,9 @@ private:
     Button volume_down_button_;
 
     // ========================================================================
-    // Motion update timer (20Hz = 50ms interval)
+    // Motion update task (20Hz = 50ms interval)
     // ========================================================================
-    esp_timer_handle_t motion_timer_ = nullptr;
+    TaskHandle_t motion_task_handle_ = nullptr;
 
     // ========================================================================
     // MAIN TFT Display Initialization (ST7789 240x240 via SPI)
@@ -244,19 +244,24 @@ private:
             return;
         }
 
-        // Start 20Hz timer to drive gait and attack animation updates
-        esp_timer_create_args_t timer_args = {
-            .callback = [](void*) {
-                GaitGenerator::GetInstance().Update();
-                AttackPatterns::GetInstance().UpdateFrame();
+        // Start 20Hz task to drive gait and attack animation updates
+        BaseType_t ok = xTaskCreatePinnedToCore(
+            [](void* arg) {
+                TickType_t last_wake = xTaskGetTickCount();
+                const TickType_t interval = pdMS_TO_TICKS(50); // 20Hz
+
+                while (true) {
+                    GaitGenerator::GetInstance().Update();
+                    AttackPatterns::GetInstance().UpdateFrame();
+                    vTaskDelayUntil(&last_wake, interval);
+                }
             },
-            .arg = nullptr,
-            .dispatch_method = ESP_TIMER_TASK,
-            .name = "motion_update",
-            .skip_unhandled_events = true,
-        };
-        ESP_ERROR_CHECK(esp_timer_create(&timer_args, &motion_timer_));
-        ESP_ERROR_CHECK(esp_timer_start_periodic(motion_timer_, 50 * 1000)); // 50ms = 20Hz
+            "motion_update", 4096, this, 15, &motion_task_handle_, 0);
+
+        if (ok != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create motion update task!");
+            return;
+        }
 
         ESP_LOGI(TAG, "Motion layer ready: ServoController + GaitGenerator + AttackPatterns @ 20Hz");
     }
@@ -450,8 +455,8 @@ public:
         cJSON* root = cJSON_CreateObject();
         cJSON_AddStringToObject(root, "board", "hexapod_dual");
         cJSON_AddStringToObject(root, "description", "Combined Hexapod VoiceBot + Bot");
-        cJSON_AddNumberToObject(root, "servo_count", SERVO_COUNT);
-        cJSON_AddNumberToObject(root, "pca9685_count", PCA9685_COUNT);
+        cJSON_AddNumberToObject(root, "servo_count", HexapodConst::NUM_SERVOS);
+        cJSON_AddNumberToObject(root, "pca9685_count", HexapodConst::PCA9685_COUNT);
         cJSON_AddStringToObject(root, "main_display", "ST7789 240x240");
         cJSON_AddStringToObject(root, "emotion_display", "ST7735 80x160");
         cJSON_AddStringToObject(root, "camera", "OV5640 5MP");

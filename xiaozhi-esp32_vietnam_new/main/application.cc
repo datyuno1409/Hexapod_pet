@@ -15,6 +15,7 @@
 #include "esp32_sd_music.h"
 #include "features/mcp_server_features.h"
 #include "hexapod_mcp_tools.h"
+#include "hexapod_servo_controller.h"
 #include "hexapod_server.h"
 #include "hexapod_uart_bridge.h"
 #include "features/music/audio_stream_player.h"
@@ -386,8 +387,11 @@ void Application::Start() {
 
     /* Setup the audio service. Robot-controller boards may not have audio. */
     auto codec = board.GetAudioCodec();
-    if (codec != nullptr) {
+    const std::string board_type = board.GetBoardType();
+
+    if (codec != nullptr && board_type != "hexapod_bot") {
         audio_service_.Initialize(codec);
+
 #ifdef CONFIG_MIC_HIGH_PASS_FILTER_ENABLE
         // Enable high pass filter to reduce low frequency noise
         {
@@ -409,6 +413,8 @@ void Application::Start() {
             xEventGroupSetBits(event_group_, MAIN_EVENT_VAD_CHANGE);
         };
         audio_service_.SetCallbacks(callbacks);
+    } else if (board_type == "hexapod_bot") {
+        ESP_LOGI(TAG, "Hexapod Bot detected: Audio service explicitly disabled to save resources");
     } else {
         ESP_LOGW(TAG, "No audio codec on this board; audio service disabled");
     }
@@ -493,11 +499,14 @@ void Application::Start() {
     // - hexapod_bot: HTTP command server + UART bridge slave (receives from VoiceBot)
     // - hexapod-dual: Both UART bridge + HTTP server (single-board)
     // - Other boards: No hexapod functionality
-    const std::string board_type = Board::GetInstance().GetBoardType();
     ESP_LOGI(TAG, "Board type: %s", board_type.c_str());
     if (board_type == "hexapod_voicebot") {
-        HexapodUartBridge::GetInstance().Start(HexapodUartBridge::Role::kMaster);
-        ESP_LOGI(TAG, "Hexapod VoiceBot: UART bridge started (master)");
+        if (!ServoController::GetInstance().IsInitialized()) {
+            HexapodUartBridge::GetInstance().Start(HexapodUartBridge::Role::kMaster);
+            ESP_LOGI(TAG, "Hexapod VoiceBot: UART bridge started (master)");
+        } else {
+            ESP_LOGI(TAG, "Hexapod VoiceBot: Local ServoController is active. Skipping UART bridge (diagnostic mode).");
+        }
     } else if (board_type == "hexapod_bot") {
         HexapodUartBridge::GetInstance().Start(HexapodUartBridge::Role::kSlave);
         HexapodServer::GetInstance().Start(8081);
